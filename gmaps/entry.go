@@ -93,6 +93,18 @@ type Entry struct {
 	UserReviews         []Review               `json:"user_reviews"`
 	UserReviewsExtended []Review               `json:"user_reviews_extended"`
 	Emails              []string               `json:"emails"`
+	// Additional fields for enhanced data extraction
+	CountryCode         string                 `json:"country_code"`
+	OpeningDate         string                 `json:"opening_date"`
+	Facebook            string                 `json:"facebook"`
+	Instagram           string                 `json:"instagram"`
+	LinkedIn            string                 `json:"linkedin"`
+	Twitter             string                 `json:"twitter"`
+	// Detailed opening/closing hours
+	OpeningHours        string                 `json:"opening_hours"`
+	ClosingHours        string                 `json:"closing_hours"`
+	IsOpen24Hours       bool                   `json:"is_open_24_hours"`
+	IsClosed            bool                   `json:"is_closed"`
 }
 
 func (e *Entry) haversineDistance(lat, lon float64) float64 {
@@ -189,6 +201,16 @@ func (e *Entry) CsvHeaders() []string {
 		"user_reviews",
 		"user_reviews_extended",
 		"emails",
+		"country_code",
+		"opening_date",
+		"facebook",
+		"instagram",
+		"linkedin",
+		"twitter",
+		"opening_hours",
+		"closing_hours",
+		"is_open_24_hours",
+		"is_closed",
 	}
 }
 
@@ -227,6 +249,16 @@ func (e *Entry) CsvRow() []string {
 		stringify(e.UserReviews),
 		stringify(e.UserReviewsExtended),
 		stringSliceToString(e.Emails),
+		e.CountryCode,
+		e.OpeningDate,
+		e.Facebook,
+		e.Instagram,
+		e.LinkedIn,
+		e.Twitter,
+		e.OpeningHours,
+		e.ClosingHours,
+		stringify(e.IsOpen24Hours),
+		stringify(e.IsClosed),
 	}
 }
 

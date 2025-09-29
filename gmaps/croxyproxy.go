@@ -3,7 +3,6 @@ package gmaps
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
@@ -103,7 +102,7 @@ func (j *CroxyProxyJob) BrowserActions(ctx context.Context, page playwright.Page
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		log.Info(fmt.Sprintf("CroxyProxy attempt %d/%d for %s", attempt, maxRetries, j.TargetURL))
 		
-		if err := j.performCroxyProxyRequest(ctx, page, log); err != nil {
+		if err := j.performCroxyProxyRequest(ctx, page); err != nil {
 			log.Error(fmt.Sprintf("Attempt %d failed: %v", attempt, err))
 			if attempt == maxRetries {
 				resp.Error = fmt.Errorf("failed to scrape after %d attempts: %v", maxRetries, err)
@@ -134,12 +133,9 @@ func (j *CroxyProxyJob) BrowserActions(ctx context.Context, page playwright.Page
 	return resp
 }
 
-func (j *CroxyProxyJob) performCroxyProxyRequest(ctx context.Context, page playwright.Page, log scrapemate.Logger) error {
-	// Set random user agent
-	userAgent := userAgents[rand.Intn(len(userAgents))]
-	if err := page.SetUserAgent(userAgent); err != nil {
-		return fmt.Errorf("failed to set user agent: %w", err)
-	}
+func (j *CroxyProxyJob) performCroxyProxyRequest(ctx context.Context, page playwright.Page) error {
+	log := scrapemate.GetLoggerFromContext(ctx)
+	// Note: User agent should be set at browser context level, not page level in Playwright Go
 	
 	// Set extra headers
 	if err := page.SetExtraHTTPHeaders(map[string]string{
@@ -158,7 +154,7 @@ func (j *CroxyProxyJob) performCroxyProxyRequest(ctx context.Context, page playw
 	}
 	
 	// Wait for URL input field
-	if err := page.WaitForSelector(urlInputSelector, playwright.PageWaitForSelectorOptions{
+	if _, err = page.WaitForSelector(urlInputSelector, playwright.PageWaitForSelectorOptions{
 		Timeout: playwright.Float(defaultTimeout),
 	}); err != nil {
 		return fmt.Errorf("URL input field not found: %w", err)
@@ -178,7 +174,8 @@ func (j *CroxyProxyJob) performCroxyProxyRequest(ctx context.Context, page playw
 	}
 	
 	// Wait for navigation
-	if err := page.WaitForLoadState(playwright.LoadStateDomcontentloaded, playwright.PageWaitForLoadStateOptions{
+	if err := page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		State:   playwright.LoadStateDomcontentloaded,
 		Timeout: playwright.Float(navigationTimeout),
 	}); err != nil {
 		return fmt.Errorf("navigation timeout: %w", err)
@@ -205,7 +202,8 @@ func (j *CroxyProxyJob) performCroxyProxyRequest(ctx context.Context, page playw
 	// Handle proxy launching page
 	if strings.Contains(contentLower, "proxy is launching") {
 		log.Info("Proxy launching page detected. Waiting for final redirect...")
-		if err := page.WaitForLoadState(playwright.LoadStateLoad, playwright.PageWaitForLoadStateOptions{
+		if err := page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+			State:   playwright.LoadStateLoad,
 			Timeout: playwright.Float(loadTimeout),
 		}); err != nil {
 			return fmt.Errorf("final redirect timeout: %w", err)
@@ -217,9 +215,10 @@ func (j *CroxyProxyJob) performCroxyProxyRequest(ctx context.Context, page playw
 	
 	// Wait for CroxyProxy frame to render
 	log.Info("Waiting for CroxyProxy frame to render...")
-	if err := page.WaitForSelector("#__cpsHeaderTab", playwright.PageWaitForSelectorOptions{
+	_, err = page.WaitForSelector("#__cpsHeaderTab", playwright.PageWaitForSelectorOptions{
 		Timeout: playwright.Float(defaultTimeout),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("CroxyProxy frame not found: %w", err)
 	}
 	

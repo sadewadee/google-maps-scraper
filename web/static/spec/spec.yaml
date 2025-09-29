@@ -200,6 +200,223 @@ components:
             type: string
         use_croxy:
           type: boolean
+
+    Entry:
+      type: object
+      properties:
+        input_id:
+          type: string
+        link:
+          type: string
+        cid:
+          type: string
+        title:
+          type: string
+        categories:
+          type: array
+          items:
+            type: string
+        category:
+          type: string
+        address:
+          type: string
+        open_hours:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        popular_times:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+        web_site:
+          type: string
+        phone:
+          type: string
+        plus_code:
+          type: string
+        review_count:
+          type: integer
+        review_rating:
+          type: number
+          format: float
+        reviews_per_rating:
+          type: object
+          additionalProperties:
+            type: integer
+        latitude:
+          type: number
+          format: double
+        longtitude:
+          type: number
+          format: double
+        status:
+          type: string
+        description:
+          type: string
+        reviews_link:
+          type: string
+        thumbnail:
+          type: string
+        timezone:
+          type: string
+        price_range:
+          type: string
+        data_id:
+          type: string
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              image:
+                type: string
+        reservations:
+          type: array
+          items:
+            type: object
+            properties:
+              link:
+                type: string
+              source:
+                type: string
+        order_online:
+          type: array
+          items:
+            type: object
+            properties:
+              link:
+                type: string
+              source:
+                type: string
+        menu:
+          type: object
+          properties:
+            link:
+              type: string
+            source:
+              type: string
+        owner:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            link:
+              type: string
+        complete_address:
+          type: object
+          properties:
+            borough:
+              type: string
+            street:
+              type: string
+            city:
+              type: string
+            postal_code:
+              type: string
+            state:
+              type: string
+            country:
+              type: string
+        about:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    enabled:
+                      type: boolean
+        user_reviews:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              profile_picture:
+                type: string
+              rating:
+                type: integer
+              description:
+                type: string
+              images:
+                type: array
+                items:
+                  type: string
+              when:
+                type: string
+        user_reviews_extended:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              profile_picture:
+                type: string
+              rating:
+                type: integer
+              description:
+                type: string
+              images:
+                type: array
+                items:
+                  type: string
+              when:
+                type: string
+        emails:
+          type: array
+          items:
+            type: string
+        country_code:
+          type: string
+          description: "ISO country code (e.g., US, AU, ID)"
+        opening_date:
+          type: string
+          description: "Business opening date"
+        facebook:
+          type: string
+          description: "Facebook profile URL"
+        instagram:
+          type: string
+          description: "Instagram profile URL"
+        linkedin:
+          type: string
+          description: "LinkedIn profile URL"
+        twitter:
+          type: string
+          description: "Twitter profile URL"
+        opening_hours:
+          type: string
+          description: "Business opening hours"
+        closing_hours:
+          type: string
+          description: "Business closing hours"
+        is_open_24_hours:
+          type: boolean
+          description: "Whether the business is open 24 hours"
+        is_closed:
+          type: boolean
+          description: "Whether the business is currently closed"
+        use_croxy:
+          type: boolean
         use_croxy:
           type: boolean
 

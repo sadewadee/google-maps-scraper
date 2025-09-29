@@ -2,3 +2,7 @@ cache/
 vendor
 bin
 webdata/
+gmapsdata/
+Docs/
+Docs/*
+google-maps-scraper
