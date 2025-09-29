@@ -198,6 +198,10 @@ components:
           type: array
           items:
             type: string
+        use_croxy:
+          type: boolean
+        use_croxy:
+          type: boolean
 
     ApiScrapeResponse:
       type: object

@@ -177,6 +177,7 @@ type formData struct {
 	Depth    int
 	Email    bool
 	Proxies  []string
+	UseCroxy bool
 }
 
 type ctxKey string
@@ -239,6 +240,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		Lon:      "0",
 		Depth:    10,
 		Email:    false,
+		UseCroxy: false,
 	}
 
 	_ = tmpl.Execute(w, data)
@@ -331,6 +333,8 @@ func (s *Server) scrape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newJob.Data.Email = r.Form.Get("email") == "on"
+
+	newJob.Data.UseCroxy = r.Form.Get("usecroxy") == "on"
 
 	proxies := strings.Split(r.Form.Get("proxies"), "\n")
 	if len(proxies) > 0 {

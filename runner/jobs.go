@@ -28,6 +28,7 @@ func CreateSeedJobs(
 	dedup deduper.Deduper,
 	exitMonitor exiter.Exiter,
 	extraReviews bool,
+	useCroxy bool,
 ) (jobs []scrapemate.IJob, err error) {
 	var lat, lon float64
 
@@ -85,7 +86,14 @@ func CreateSeedJobs(
 
 		var job scrapemate.IJob
 
-		if !fastmode {
+		if useCroxy {
+			// Create CroxyProxy job for the target URL
+			targetURL := fmt.Sprintf("https://www.google.com/maps/search/%s", query)
+			if geoCoordinates != "" && zoom > 0 {
+				targetURL = fmt.Sprintf("https://www.google.com/maps/search/%s/@%s,%dz", query, strings.ReplaceAll(geoCoordinates, " ", ""), zoom)
+			}
+			job = gmaps.NewCroxyProxyJob(id, targetURL)
+		} else if !fastmode {
 			opts := []gmaps.GmapJobOptions{}
 
 			if dedup != nil {

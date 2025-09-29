@@ -72,6 +72,7 @@ type JobData struct {
 	Email    bool          `json:"email"`
 	MaxTime  time.Duration `json:"max_time"`
 	Proxies  []string      `json:"proxies"`
+	UseCroxy bool          `json:"use_croxy"`
 }
 
 func (d *JobData) Validate() error {
