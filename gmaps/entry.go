@@ -93,6 +93,7 @@ type Entry struct {
 	UserReviews         []Review               `json:"user_reviews"`
 	UserReviewsExtended []Review               `json:"user_reviews_extended"`
 	Emails              []string               `json:"emails"`
+	Verified            bool                   `json:"verified"`
 
 	Facebook  string `json:"facebook,omitempty"`
 	Instagram string `json:"instagram,omitempty"`
@@ -119,12 +120,6 @@ func (e *Entry) haversineDistance(lat, lon float64) float64 {
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 
 	return R * c
-}
-
-func (e *Entry) isWithinRadius(lat, lon, radius float64) bool {
-	distance := e.haversineDistance(lat, lon)
-
-	return distance <= radius
 }
 
 func (e *Entry) IsWebsiteValidForEmail() bool {
@@ -194,6 +189,7 @@ func (e *Entry) CsvHeaders() []string {
 		"user_reviews",
 		"user_reviews_extended",
 		"emails",
+		"verified",
 		"facebook",
 		"instagram",
 		"linkedin",
@@ -236,6 +232,7 @@ func (e *Entry) CsvRow() []string {
 		stringify(e.UserReviews),
 		stringify(e.UserReviewsExtended),
 		stringSliceToString(e.Emails),
+		stringify(e.Verified),
 		e.Facebook,
 		e.Instagram,
 		e.LinkedIn,
@@ -631,6 +628,11 @@ func stringify(v any) string {
 	switch val := v.(type) {
 	case string:
 		return val
+	case bool:
+		if val {
+			return "True"
+		}
+		return "False"
 	case float64:
 		return fmt.Sprintf("%f", val)
 	case nil:

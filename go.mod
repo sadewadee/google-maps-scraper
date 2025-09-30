@@ -1,8 +1,9 @@
-module github.com/gosom/google-maps-scraper
+module github.com/sadewadee/google-maps-scraper
 
 go 1.24.6
 
 require (
+	github.com/AfterShip/email-verifier v1.4.1
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/aws/aws-lambda-go v1.48.0
 	github.com/aws/aws-sdk-go-v2 v1.36.3
@@ -148,6 +149,7 @@ require (
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
+	github.com/hbollon/go-edlib v1.6.0 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

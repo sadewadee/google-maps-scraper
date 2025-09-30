@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-var jobs []Job
-
 const (
 	StatusPending = "pending"
 	StatusWorking = "working"
@@ -73,6 +71,13 @@ type JobData struct {
 	Email    bool          `json:"email"`
 	MaxTime  time.Duration `json:"max_time"`
 	Proxies  []string      `json:"proxies"`
+
+	// Preflight quick checks for website URL (performance-focused)
+	EnablePreflight        bool `json:"enable_preflight,omitempty"`
+	PreflightDNSTimeoutMs  int  `json:"preflight_dns_timeout_ms,omitempty"`
+	PreflightTCPTimeoutMs  int  `json:"preflight_tcp_timeout_ms,omitempty"`
+	PreflightHEADTimeoutMs int  `json:"preflight_head_timeout_ms,omitempty"`
+	PreflightEnableHEAD    bool `json:"preflight_enable_head,omitempty"`
 
 	// Bounding box for adaptive tiling (city/country scope)
 	BboxMinLat string `json:"bbox_min_lat,omitempty"`

@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosom/google-maps-scraper/deduper"
-	"github.com/gosom/google-maps-scraper/exiter"
-	"github.com/gosom/google-maps-scraper/runner"
-	"github.com/gosom/google-maps-scraper/tlmt"
-	"github.com/gosom/google-maps-scraper/web"
-	"github.com/gosom/google-maps-scraper/web/sqlite"
+	"github.com/sadewadee/google-maps-scraper/deduper"
+	"github.com/sadewadee/google-maps-scraper/exiter"
+	"github.com/sadewadee/google-maps-scraper/runner"
+	"github.com/sadewadee/google-maps-scraper/tlmt"
+	"github.com/sadewadee/google-maps-scraper/web"
+	"github.com/sadewadee/google-maps-scraper/web/sqlite"
 	"github.com/gosom/scrapemate"
 	"github.com/gosom/scrapemate/adapters/writers/csvwriter"
 	"github.com/gosom/scrapemate/scrapemateapp"
@@ -25,9 +25,10 @@ import (
 )
 
 type webrunner struct {
-	srv *web.Server
-	svc *web.Service
-	cfg *runner.Config
+	srv   *web.Server
+	svc   *web.Service
+	cfg   *runner.Config
+	dedup deduper.Deduper
 }
 
 func New(cfg *runner.Config) (runner.Runner, error) {
@@ -55,10 +56,24 @@ func New(cfg *runner.Config) (runner.Runner, error) {
 		return nil, err
 	}
 
+	// initialize deduper (persistent across jobs when enabled)
+	var dd deduper.Deduper
+	if cfg.PersistentDedup {
+		if d, err := deduper.NewPersistentSQLite(dbpath); err == nil {
+			dd = d
+		} else {
+			log.Printf("persistent deduper init failed (%v), falling back to in-memory", err)
+			dd = deduper.New()
+		}
+	} else {
+		dd = deduper.New()
+	}
+
 	ans := webrunner{
-		srv: srv,
-		svc: svc,
-		cfg: cfg,
+		srv:   srv,
+		svc:   svc,
+		cfg:   cfg,
+		dedup: dd,
 	}
 
 	return &ans, nil
@@ -175,7 +190,7 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 		coords = job.Data.Lat + "," + job.Data.Lon
 	}
 
-	dedup := deduper.New()
+	// using runner-level deduper (persistent if enabled)
 	exitMonitor := exiter.New()
 
 	var seedJobs []scrapemate.IJob
@@ -232,7 +247,7 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 			maxTiles,
 			staticFirst,
 			rad,
-			dedup,
+			w.dedup,
 			exitMonitor,
 		)
 	} else {
@@ -251,7 +266,7 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 
 				return float64(job.Data.Radius)
 			}(),
-			dedup,
+			w.dedup,
 			exitMonitor,
 			w.cfg.ExtraReviews,
 		)

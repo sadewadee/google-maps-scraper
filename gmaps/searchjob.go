@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gosom/google-maps-scraper/deduper"
-	"github.com/gosom/google-maps-scraper/exiter"
 	"github.com/gosom/scrapemate"
+	"github.com/sadewadee/google-maps-scraper/deduper"
+	"github.com/sadewadee/google-maps-scraper/exiter"
 )
 
 type SearchJobOptions func(*SearchJob)
@@ -43,9 +43,10 @@ type MapSearchParams struct {
 type SearchJob struct {
 	scrapemate.Job
 
-	params      *MapSearchParams
-	ExitMonitor exiter.Exiter
-	Deduper     deduper.Deduper
+	params       *MapSearchParams
+	ExitMonitor  exiter.Exiter
+	Deduper      deduper.Deduper
+	useInResults bool
 }
 
 func NewSearchJob(params *MapSearchParams, opts ...SearchJobOptions) *SearchJob {
@@ -67,6 +68,7 @@ func NewSearchJob(params *MapSearchParams, opts ...SearchJobOptions) *SearchJob 
 	}
 
 	job.params = params
+	job.useInResults = true
 
 	for _, opt := range opts {
 		opt(&job)
@@ -136,6 +138,7 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 				j.params.Query, j.params.Location.Lat, j.params.Location.Lon, currentZoom, elapsed.String()))
 		}
 
+		j.useInResults = false
 		return nil, next, nil
 	}
 
@@ -178,6 +181,7 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 				j.params.Query, j.params.Location.Lat, j.params.Location.Lon, currentZoom, err.Error(), elapsed.String()))
 		}
 
+		j.useInResults = false
 		return nil, next, nil
 	}
 
@@ -219,6 +223,7 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 				j.params.Query, j.params.Location.Lat, j.params.Location.Lon, currentZoom, elapsed.String()))
 		}
 
+		j.useInResults = false
 		return nil, next, nil
 	}
 	if len(entries) == 1 {
@@ -258,6 +263,7 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 				j.params.Query, j.params.Location.Lat, j.params.Location.Lon, currentZoom, elapsed.String()))
 		}
 
+		j.useInResults = false
 		return nil, next, nil
 	}
 	// Radius filter if provided
@@ -336,6 +342,7 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 				j.params.Query, j.params.Location.Lat, j.params.Location.Lon, currentZoom, len(entries), len(next), elapsed.String()))
 		}
 
+		j.useInResults = false
 		return nil, next, nil
 	}
 
@@ -420,4 +427,11 @@ func metersPerPixel(lat float64, zoom int) float64 {
 func viewportMeters(lat float64, zoom, vw, vh int) (float64, float64) {
 	mpp := metersPerPixel(lat, zoom)
 	return mpp * float64(vw), mpp * float64(vh)
+}
+
+// UseInResults controls whether this job's output should be written by result writers.
+// When SearchJob spawns child jobs (fallback/subdivide), it returns nil data and sets this to false
+// to prevent writers from attempting to serialize a nil payload.
+func (j *SearchJob) UseInResults() bool {
+	return j.useInResults
 }

@@ -6,9 +6,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
-	"github.com/gosom/google-maps-scraper/exiter"
 	"github.com/gosom/scrapemate"
 	"github.com/mcnijman/go-emailaddress"
+	"github.com/sadewadee/google-maps-scraper/exiter"
 )
 
 type EmailExtractJobOptions func(*EmailExtractJob)
@@ -16,8 +16,9 @@ type EmailExtractJobOptions func(*EmailExtractJob)
 type EmailExtractJob struct {
 	scrapemate.Job
 
-	Entry       *Entry
-	ExitMonitor exiter.Exiter
+	Entry        *Entry
+	ExitMonitor  exiter.Exiter
+	useInResults bool
 }
 
 func NewEmailJob(parentID string, entry *Entry, opts ...EmailExtractJobOptions) *EmailExtractJob {
@@ -38,6 +39,7 @@ func NewEmailJob(parentID string, entry *Entry, opts ...EmailExtractJobOptions) 
 	}
 
 	job.Entry = entry
+	job.useInResults = true
 
 	for _, opt := range opts {
 		opt(&job)
@@ -58,23 +60,25 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 		resp.Body = nil
 	}()
 
-	defer func() {
+	log := scrapemate.GetLoggerFromContext(ctx)
+	log.Info("Processing email job", "url", j.URL)
+
+	// Helper to mark completion when we produce final Entry here (no verify step).
+	markCompleted := func() {
 		if j.ExitMonitor != nil {
 			j.ExitMonitor.IncrPlacesCompleted(1)
 		}
-	}()
+	}
 
-	log := scrapemate.GetLoggerFromContext(ctx)
-
-	log.Info("Processing email job", "url", j.URL)
-
-	// if html fetch failed just return
+	// If HTML fetch failed, return current entry as-is and mark completed.
 	if resp.Error != nil {
+		markCompleted()
 		return j.Entry, nil, nil
 	}
 
 	doc, ok := resp.Document.(*goquery.Document)
 	if !ok {
+		markCompleted()
 		return j.Entry, nil, nil
 	}
 
@@ -82,16 +86,36 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 	if len(emails) == 0 {
 		emails = regexEmailExtractor(resp.Body)
 	}
-
 	j.Entry.Emails = emails
 
+	// Extract social links regardless
 	socialMediaExtractor(doc, j.Entry)
 
+	// If we found at least one email, enqueue a verification job (Flow B) and do NOT mark completed here.
+	if len(j.Entry.Emails) > 0 {
+		opts := []EmailVerifyJobOptions{}
+		if j.ExitMonitor != nil {
+			opts = append(opts, WithEmailVerifyJobExitMonitor(j.ExitMonitor))
+		}
+		verifyJob := NewEmailVerifyJob(j.ID, j.Entry, opts...)
+		// Prevent writer from attempting to write this job (data is intentionally nil here).
+		j.useInResults = false
+		return nil, []scrapemate.IJob{verifyJob}, nil
+	}
+
+	// No emails found: finalize entry now and mark completed.
+	markCompleted()
 	return j.Entry, nil, nil
 }
 
 func (j *EmailExtractJob) ProcessOnFetchError() bool {
 	return true
+}
+
+// UseInResults controls whether this job's output should be written by result writers.
+// When a verification job is enqueued, this returns false to avoid emitting nil data.
+func (j *EmailExtractJob) UseInResults() bool {
+	return j.useInResults
 }
 
 func docEmailExtractor(doc *goquery.Document) []string {

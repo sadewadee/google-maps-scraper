@@ -8,7 +8,7 @@ import (
 
 	_ "modernc.org/sqlite" // sqlite driver
 
-	"github.com/gosom/google-maps-scraper/web"
+	"github.com/sadewadee/google-maps-scraper/web"
 )
 
 type repo struct {
@@ -204,7 +204,8 @@ func initDatabase(path string) (*sql.DB, error) {
 }
 
 func createSchema(db *sql.DB) error {
-	_, err := db.Exec(`
+	// Jobs table (existing)
+	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS jobs (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -213,8 +214,17 @@ func createSchema(db *sql.DB) error {
 			created_at INT NOT NULL,
 			updated_at INT NOT NULL
 		)
-	`)
+	`); err != nil {
+		return err
+	}
 
+	// Persistent dedup keys across jobs
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS dedup_keys (
+			key TEXT PRIMARY KEY,
+			created_at INT NOT NULL
+		)
+	`)
 	return err
 }
 

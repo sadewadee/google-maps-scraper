@@ -10,7 +10,7 @@ import (
 	"github.com/gosom/scrapemate"
 	"github.com/playwright-community/playwright-go"
 
-	"github.com/gosom/google-maps-scraper/exiter"
+	"github.com/sadewadee/google-maps-scraper/exiter"
 )
 
 type PlaceJobOptions func(*PlaceJob)
@@ -22,6 +22,13 @@ type PlaceJob struct {
 	ExtractEmail        bool
 	ExitMonitor         exiter.Exiter
 	ExtractExtraReviews bool
+	PreflightEnabled    bool
+
+	// Preflight config (performance-focused quick checks)
+	PreflightDNSTimeoutMs  int
+	PreflightTCPTimeoutMs  int
+	PreflightHEADTimeoutMs int
+	PreflightEnableHEAD    bool
 }
 
 func NewPlaceJob(parentID, langCode, u string, extractEmail, extraExtraReviews bool, opts ...PlaceJobOptions) *PlaceJob {
@@ -45,6 +52,8 @@ func NewPlaceJob(parentID, langCode, u string, extractEmail, extraExtraReviews b
 	job.UsageInResultststs = true
 	job.ExtractEmail = extractEmail
 	job.ExtractExtraReviews = extraExtraReviews
+	// Enable URL preflight by default for performance
+	job.PreflightEnabled = true
 
 	for _, opt := range opts {
 		opt(&job)
@@ -54,16 +63,39 @@ func NewPlaceJob(parentID, langCode, u string, extractEmail, extraExtraReviews b
 }
 
 func WithPlaceJobExitMonitor(exitMonitor exiter.Exiter) PlaceJobOptions {
-    return func(j *PlaceJob) {
-        j.ExitMonitor = exitMonitor
-    }
+	return func(j *PlaceJob) {
+		j.ExitMonitor = exitMonitor
+	}
+}
+
+// WithPlacePreflightEnabled toggles URL preflight checks before visiting websites for email extraction.
+func WithPlacePreflightEnabled(enabled bool) PlaceJobOptions {
+	return func(j *PlaceJob) {
+		j.PreflightEnabled = enabled
+	}
+}
+
+// WithPlacePreflightConfig sets preflight quick-check timeouts and HEAD enable flag.
+func WithPlacePreflightConfig(dnsMs, tcpMs, headMs int, enableHead bool) PlaceJobOptions {
+	return func(j *PlaceJob) {
+		if dnsMs > 0 {
+			j.PreflightDNSTimeoutMs = dnsMs
+		}
+		if tcpMs > 0 {
+			j.PreflightTCPTimeoutMs = tcpMs
+		}
+		if headMs > 0 {
+			j.PreflightHEADTimeoutMs = headMs
+		}
+		j.PreflightEnableHEAD = enableHead
+	}
 }
 
 // UseInResults controls whether this job's Process output is written to results.
 // When the PlaceJob redirects to an EmailExtractJob, it returns nil data and
 // should not be written; we toggle the internal flag accordingly.
 func (j *PlaceJob) UseInResults() bool {
-    return j.UsageInResultststs
+	return j.UsageInResultststs
 }
 
 func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, []scrapemate.IJob, error) {
@@ -95,12 +127,30 @@ func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, [
 	}
 
 	if j.ExtractEmail && entry.IsWebsiteValidForEmail() {
-		opts := []EmailExtractJobOptions{}
-		if j.ExitMonitor != nil {
-			opts = append(opts, WithEmailJobExitMonitor(j.ExitMonitor))
+		if j.PreflightEnabled {
+			// Added the URL Preflight: run fast DNS/TCP (optional HEAD) checks before visiting the website
+			// to avoid long timeouts on dead URLs. Chains to EmailExtractJob only when alive.
+			opts := []EmailPreflightJobOptions{}
+			if j.ExitMonitor != nil {
+				opts = append(opts, WithEmailPreflightExitMonitor(j.ExitMonitor))
+			}
+			// Apply configured preflight timeouts and HEAD policy when provided
+			opts = append(opts, WithEmailPreflightTimeouts(j.PreflightDNSTimeoutMs, j.PreflightTCPTimeoutMs, j.PreflightHEADTimeoutMs, j.PreflightEnableHEAD))
+
+			preflightJob := NewEmailPreflightJob(j.ID, &entry, opts...)
+
+			// Do not write this PlaceJob's output; final data will be produced downstream by the chained job.
+			j.UsageInResultststs = false
+
+			return nil, []scrapemate.IJob{preflightJob}, nil
 		}
 
-		emailJob := NewEmailJob(j.ID, &entry, opts...)
+		// Preflight disabled: enqueue EmailExtractJob directly (legacy behavior).
+		eopts := []EmailExtractJobOptions{}
+		if j.ExitMonitor != nil {
+			eopts = append(eopts, WithEmailJobExitMonitor(j.ExitMonitor))
+		}
+		emailJob := NewEmailJob(j.ID, &entry, eopts...)
 
 		j.UsageInResultststs = false
 

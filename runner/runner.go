@@ -15,10 +15,10 @@ import (
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 
-	"github.com/gosom/google-maps-scraper/s3uploader"
-	"github.com/gosom/google-maps-scraper/tlmt"
-	"github.com/gosom/google-maps-scraper/tlmt/gonoop"
-	"github.com/gosom/google-maps-scraper/tlmt/goposthog"
+	"github.com/sadewadee/google-maps-scraper/s3uploader"
+	"github.com/sadewadee/google-maps-scraper/tlmt"
+	"github.com/sadewadee/google-maps-scraper/tlmt/gonoop"
+	"github.com/sadewadee/google-maps-scraper/tlmt/goposthog"
 )
 
 const (
@@ -79,6 +79,7 @@ type Config struct {
 	Addr                     string
 	DisablePageReuse         bool
 	ExtraReviews             bool
+	PersistentDedup          bool
 
 	// Adaptive tiling defaults for web runner and CLI mode
 	SplitThreshold int
@@ -131,6 +132,7 @@ func ParseConfig() *Config {
 	flag.StringVar(&cfg.Addr, "addr", ":8080", "address to listen on for web server")
 	flag.BoolVar(&cfg.DisablePageReuse, "disable-page-reuse", false, "disable page reuse in playwright")
 	flag.BoolVar(&cfg.ExtraReviews, "extra-reviews", false, "enable extra reviews collection")
+	flag.BoolVar(&cfg.PersistentDedup, "persistent-dedup", false, "enable persistent deduplication across jobs (stores keys in SQLite)")
 
 	// Adaptive tiling CLI flags
 	flag.IntVar(&cfg.SplitThreshold, "split-threshold", 90, "tiling split threshold (approximate cap trigger)")

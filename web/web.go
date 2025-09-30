@@ -690,10 +690,6 @@ func renderJSON(w http.ResponseWriter, code int, data any) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
-func formatDate(t time.Time) string {
-	return t.Format("Jan 02, 2006 15:04:05")
-}
-
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")

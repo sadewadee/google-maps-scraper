@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
-	"github.com/gosom/google-maps-scraper/deduper"
-	"github.com/gosom/google-maps-scraper/exiter"
 	"github.com/gosom/scrapemate"
 	"github.com/playwright-community/playwright-go"
+	"github.com/sadewadee/google-maps-scraper/deduper"
+	"github.com/sadewadee/google-maps-scraper/exiter"
 )
 
 type GmapJobOptions func(*GmapJob)
@@ -21,9 +22,16 @@ type GmapJobOptions func(*GmapJob)
 type GmapJob struct {
 	scrapemate.Job
 
-	MaxDepth     int
-	LangCode     string
-	ExtractEmail bool
+	MaxDepth         int
+	LangCode         string
+	ExtractEmail     bool
+	PreflightEnabled bool
+
+	// Preflight config (propagated to PlaceJob)
+	PreflightDNSTimeoutMs  int
+	PreflightTCPTimeoutMs  int
+	PreflightHEADTimeoutMs int
+	PreflightEnableHEAD    bool
 
 	Deduper             deduper.Deduper
 	ExitMonitor         exiter.Exiter
@@ -66,9 +74,10 @@ func NewGmapJob(
 			MaxRetries: maxRetries,
 			Priority:   prio,
 		},
-		MaxDepth:     maxDepth,
-		LangCode:     langCode,
-		ExtractEmail: extractEmail,
+		MaxDepth:         maxDepth,
+		LangCode:         langCode,
+		ExtractEmail:     extractEmail,
+		PreflightEnabled: true, // enable URL preflight by default
 	}
 
 	for _, opt := range opts {
@@ -93,6 +102,29 @@ func WithExitMonitor(e exiter.Exiter) GmapJobOptions {
 func WithExtraReviews() GmapJobOptions {
 	return func(j *GmapJob) {
 		j.ExtractExtraReviews = true
+	}
+}
+
+// WithPreflightEnabled toggles URL preflight checks before visiting websites for email extraction.
+func WithPreflightEnabled(enabled bool) GmapJobOptions {
+	return func(j *GmapJob) {
+		j.PreflightEnabled = enabled
+	}
+}
+
+// WithPreflightConfig sets preflight quick-check timeouts and HEAD enable flag.
+func WithPreflightConfig(dnsMs, tcpMs, headMs int, enableHead bool) GmapJobOptions {
+	return func(j *GmapJob) {
+		if dnsMs > 0 {
+			j.PreflightDNSTimeoutMs = dnsMs
+		}
+		if tcpMs > 0 {
+			j.PreflightTCPTimeoutMs = tcpMs
+		}
+		if headMs > 0 {
+			j.PreflightHEADTimeoutMs = headMs
+		}
+		j.PreflightEnableHEAD = enableHead
 	}
 }
 
@@ -121,7 +153,12 @@ func (j *GmapJob) Process(ctx context.Context, resp *scrapemate.Response) (any, 
 			jopts = append(jopts, WithPlaceJobExitMonitor(j.ExitMonitor))
 		}
 
-		placeJob := NewPlaceJob(j.ID, j.LangCode, resp.URL, j.ExtractEmail, j.ExtractExtraReviews, jopts...)
+		// propagate preflight flag and config to PlaceJob
+		popts := append(jopts,
+			WithPlacePreflightEnabled(j.PreflightEnabled),
+			WithPlacePreflightConfig(j.PreflightDNSTimeoutMs, j.PreflightTCPTimeoutMs, j.PreflightHEADTimeoutMs, j.PreflightEnableHEAD),
+		)
+		placeJob := NewPlaceJob(j.ID, j.LangCode, resp.URL, j.ExtractEmail, j.ExtractExtraReviews, popts...)
 
 		next = append(next, placeJob)
 	} else {
@@ -132,7 +169,12 @@ func (j *GmapJob) Process(ctx context.Context, resp *scrapemate.Response) (any, 
 					jopts = append(jopts, WithPlaceJobExitMonitor(j.ExitMonitor))
 				}
 
-				nextJob := NewPlaceJob(j.ID, j.LangCode, href, j.ExtractEmail, j.ExtractExtraReviews, jopts...)
+				// propagate preflight flag and config to PlaceJob
+				popts := append(jopts,
+					WithPlacePreflightEnabled(j.PreflightEnabled),
+					WithPlacePreflightConfig(j.PreflightDNSTimeoutMs, j.PreflightTCPTimeoutMs, j.PreflightHEADTimeoutMs, j.PreflightEnableHEAD),
+				)
+				nextJob := NewPlaceJob(j.ID, j.LangCode, href, j.ExtractEmail, j.ExtractExtraReviews, popts...)
 
 				if j.Deduper == nil || j.Deduper.AddIfNotExists(ctx, href) {
 					next = append(next, nextJob)
@@ -291,67 +333,143 @@ func scroll(ctx context.Context,
 	maxDepth int,
 	scrollSelector string,
 ) (int, error) {
-	expr := `async () => {
-		const el = document.querySelector("` + scrollSelector + `");
-		el.scrollTop = el.scrollHeight;
+	// Resilient multi-selector scrolling with null-safe evaluation and viewport fallback
+	log := scrapemate.GetLoggerFromContext(ctx)
 
-		return new Promise((resolve, reject) => {
-  			setTimeout(() => {
-    		resolve(el.scrollHeight);
-  			}, %d);
-		});
-	}`
+	candidates := []string{
+		scrollSelector,
+		"div[role='region']",
+		"div[aria-label='Results']",
+		"div[jscontroller][role='feed']",
+	}
 
-	var currentScrollHeight int
-	// Scroll to the bottom of the page.
-	waitTime := 100.
-	cnt := 0
+	// Build JSON array of selectors for inlined JS
+	var b strings.Builder
+	b.WriteString("[")
+	for i, s := range candidates {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(fmt.Sprintf("%q", s))
+	}
+	b.WriteString("]")
+	selectorsJSON := b.String()
+
+	var currentHeight int64
+	consecutiveNoChange := 0
+	attempts := 0
 
 	const (
-		timeout  = 500
-		maxWait2 = 2000
+		baseDelayMs = 300
+		maxDelayMs  = 2000
+		maxNoChange = 3
 	)
 
 	for i := 0; i < maxDepth; i++ {
-		cnt++
-		waitTime2 := timeout * cnt
-
-		if waitTime2 > timeout {
-			waitTime2 = maxWait2
+		attempts++
+		delay := baseDelayMs * attempts
+		if delay > maxDelayMs {
+			delay = maxDelayMs
 		}
 
-		// Scroll to the bottom of the page.
-		scrollHeight, err := page.Evaluate(fmt.Sprintf(expr, waitTime2))
+		js := fmt.Sprintf(`async () => {
+			const selectors = %s;
+			let el = null, used = null;
+			for (const s of selectors) {
+				el = document.querySelector(s);
+				if (el) { used = s; break; }
+			}
+			if (!el) {
+				// Viewport-level fallback
+				window.scrollBy(0, window.innerHeight);
+				await new Promise(r => setTimeout(r, %d));
+				return { used: null, height: document.documentElement.scrollHeight, viewport: true };
+			}
+			// Container scroll with null safety guaranteed
+			el.scrollTop = el.scrollHeight;
+			await new Promise(r => setTimeout(r, %d));
+			return { used: used, height: el.scrollHeight, viewport: false };
+		}`, selectorsJSON, delay, delay)
+
+		res, err := page.Evaluate(js)
 		if err != nil {
-			return cnt, err
+			if log != nil {
+				log.Info(fmt.Sprintf("scroll_evaluate_error attempt=%d err=%v", attempts, err))
+			}
+			//nolint:staticcheck // TODO replace with the new playwright API
+			page.WaitForTimeout(float64(delay))
+			// If repeated errors, bubble up
+			if attempts >= 2 {
+				return attempts, err
+			}
+			continue
 		}
 
-		height, ok := scrollHeight.(int)
-		if !ok {
-			return cnt, fmt.Errorf("scrollHeight is not an int")
+		// Parse result: { used: string|null, height: number, viewport: boolean }
+		usedSelector := ""
+		viewport := false
+		var height int64
+
+		if m, ok := res.(map[string]any); ok {
+			if u, ok2 := m["used"].(string); ok2 {
+				usedSelector = u
+			}
+			if vp, ok2 := m["viewport"].(bool); ok2 {
+				viewport = vp
+			}
+			switch h := m["height"].(type) {
+			case float64:
+				height = int64(h)
+			case int:
+				height = int64(h)
+			case int64:
+				height = h
+			default:
+				if hs, ok2 := m["height"].(string); ok2 {
+					if hv, convErr := strconv.ParseInt(hs, 10, 64); convErr == nil {
+						height = hv
+					}
+				}
+			}
+		} else if hv, ok := res.(int); ok {
+			height = int64(hv)
+		} else if hf, ok := res.(float64); ok {
+			height = int64(hf)
 		}
 
-		if height == currentScrollHeight {
+		if log != nil {
+			log.Info(fmt.Sprintf("scroll_attempt attempt=%d selector=%q viewport=%v height=%d", attempts, usedSelector, viewport, height))
+		}
+
+		// End-of-scroll detection by consecutive no-change
+		if height <= 0 {
+			consecutiveNoChange++
+		} else if height == currentHeight {
+			consecutiveNoChange++
+		} else {
+			consecutiveNoChange = 0
+			currentHeight = height
+		}
+
+		if consecutiveNoChange >= maxNoChange {
+			if log != nil {
+				log.Info(fmt.Sprintf("scroll_stop reason=no_change attempts=%d height=%d", attempts, currentHeight))
+			}
 			break
 		}
 
-		currentScrollHeight = height
-
 		select {
 		case <-ctx.Done():
-			return currentScrollHeight, nil
+			if log != nil {
+				log.Info("scroll_stop reason=ctx_done")
+			}
+			return int(currentHeight), nil
 		default:
 		}
 
-		waitTime *= 1.5
-
-		if waitTime > maxWait2 {
-			waitTime = maxWait2
-		}
-
 		//nolint:staticcheck // TODO replace with the new playwright API
-		page.WaitForTimeout(waitTime)
+		page.WaitForTimeout(float64(delay))
 	}
 
-	return cnt, nil
+	return attempts, nil
 }
