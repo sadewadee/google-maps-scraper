@@ -81,6 +81,12 @@ type Config struct {
 	ExtraReviews             bool
 	PersistentDedup          bool
 
+	// Geocoding-based tiling inputs (CLI)
+	Place        string
+	Provider     string
+	CC           string
+	GoogleAPIKey string
+
 	// Adaptive tiling defaults for web runner and CLI mode
 	SplitThreshold int
 	MaxTiles       int
@@ -133,6 +139,12 @@ func ParseConfig() *Config {
 	flag.BoolVar(&cfg.DisablePageReuse, "disable-page-reuse", false, "disable page reuse in playwright")
 	flag.BoolVar(&cfg.ExtraReviews, "extra-reviews", false, "enable extra reviews collection")
 	flag.BoolVar(&cfg.PersistentDedup, "persistent-dedup", false, "enable persistent deduplication across jobs (stores keys in SQLite)")
+
+	// Geocoding-based tiling (CLI)
+	flag.StringVar(&cfg.Place, "place", "", "place name for geocoding (e.g., 'Jakarta, ID')")
+	flag.StringVar(&cfg.Provider, "provider", "nominatim", "geocoding provider ('nominatim'|'google')")
+	flag.StringVar(&cfg.CC, "cc", "", "country code to disambiguate (ISO 2-letter)")
+	flag.StringVar(&cfg.GoogleAPIKey, "google-api-key", "", "Google Geocoding API key (when provider=google)")
 
 	// Adaptive tiling CLI flags
 	flag.IntVar(&cfg.SplitThreshold, "split-threshold", 90, "tiling split threshold (approximate cap trigger)")

@@ -85,6 +85,15 @@ type JobData struct {
 	BboxMaxLat string `json:"bbox_max_lat,omitempty"`
 	BboxMaxLon string `json:"bbox_max_lon,omitempty"`
 
+	// Name-based geocoding to auto-fill bbox
+	// provider: "nominatim" (default) or "google"
+	// cc: optional ISO 2-letter country code to disambiguate
+	// google_api_key: optional API key when provider="google"
+	Place        string `json:"place,omitempty"`
+	Provider     string `json:"provider,omitempty"`
+	CC           string `json:"cc,omitempty"`
+	GoogleAPIKey string `json:"google_api_key,omitempty"`
+
 	// Tiling controls
 	SplitThreshold int    `json:"split_threshold,omitempty"` // per-tile result threshold to trigger subdivision
 	MaxTiles       int    `json:"max_tiles,omitempty"`       // safety cap for tiles per job

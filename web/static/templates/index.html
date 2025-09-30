@@ -143,6 +143,26 @@
                                     <label for="longitude">Longitude</label>
                                     <input type="number" step="0.000000000000001" id="longitude" name="longitude" value="{{.Lon}}">
                                 </div>
+                                <div class="form-group">
+                                    <label for="place">Place (city/province/country)</label>
+                                    <input type="text" id="place" name="place" value="{{.Place}}" placeholder="e.g., Jakarta, ID">
+                                </div>
+                                <div class="form-group">
+                                    <label for="provider">Geocoding Provider</label>
+                                    <select id="provider" name="provider">
+                                        <option value="nominatim" {{if eq .Provider "nominatim"}}selected{{end}}>Nominatim (default)</option>
+                                        <option value="google" {{if eq .Provider "google"}}selected{{end}}>Google</option>
+                                    </select>
+                                    <small class="muted">Nominatim public service requires polite usage and ~1 req/sec. This server enforces 1 rps and sets a proper User-Agent. For bulk usage, use a self-hosted instance.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="cc">Country Code (optional)</label>
+                                    <input type="text" id="cc" name="cc" value="{{.CC}}" placeholder="ID">
+                                </div>
+                                <div class="form-group">
+                                    <label for="google_api_key">Google API Key (optional)</label>
+                                    <input type="text" id="google_api_key" name="google_api_key" value="{{.GoogleAPIKey}}" placeholder="Only when provider = google">
+                                </div>
                             </fieldset>
                         </details>
 

@@ -210,6 +210,12 @@ type formData struct {
 	Email    bool
 	Proxies  []string
 
+	// Place-based geocoding (auto-fill bbox)
+	Place        string
+	Provider     string
+	CC           string
+	GoogleAPIKey string
+
 	// Bounding box & tiling controls for adaptive query splitting
 	BboxMinLat     string
 	BboxMinLon     string
@@ -281,6 +287,12 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		Lon:      "0",
 		Depth:    10,
 		Email:    false,
+
+		// place-based geocoding defaults
+		Place:        "",
+		Provider:     "nominatim",
+		CC:           "",
+		GoogleAPIKey: "",
 
 		// bbox and tiling defaults
 		BboxMinLat:     "",
@@ -384,11 +396,20 @@ func (s *Server) scrape(w http.ResponseWriter, r *http.Request) {
 
 	newJob.Data.Email = r.Form.Get("email") == "on"
 
-	// Optional tiling & bbox controls
+	// Place-based geocoding inputs
+	newJob.Data.Place = r.Form.Get("place")
+	newJob.Data.Provider = r.Form.Get("provider")
+	newJob.Data.CC = r.Form.Get("cc")
+	newJob.Data.GoogleAPIKey = r.Form.Get("google_api_key")
+
+	// Optional tiling & bbox controls (manual overrides)
 	newJob.Data.BboxMinLat = r.Form.Get("bbox_min_lat")
 	newJob.Data.BboxMinLon = r.Form.Get("bbox_min_lon")
 	newJob.Data.BboxMaxLat = r.Form.Get("bbox_max_lat")
 	newJob.Data.BboxMaxLon = r.Form.Get("bbox_max_lon")
+
+	// Try to auto-fill bbox from place if bbox not provided; ignore errors to allow fallback
+	_ = ResolveAndFillBBox(r.Context(), &newJob.Data)
 
 	if st := strings.TrimSpace(r.Form.Get("split_threshold")); st != "" {
 		if v, err := strconv.Atoi(st); err == nil {
@@ -579,6 +600,9 @@ func (s *Server) apiScrape(w http.ResponseWriter, r *http.Request) {
 
 	// convert to seconds
 	newJob.Data.MaxTime *= time.Second
+
+	// Try to auto-fill bbox from place if bbox not provided; ignore errors to allow fallback
+	_ = ResolveAndFillBBox(r.Context(), &newJob.Data)
 
 	err = newJob.Validate()
 	if err != nil {
