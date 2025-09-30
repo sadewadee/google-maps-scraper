@@ -120,6 +120,36 @@ func New(svc *Service, addr string) (*Server, error) {
 		ans.download(w, r)
 	})
 
+	// Export job results to Google Sheets
+	mux.HandleFunc("/api/v1/jobs/{id}/export/sheets", func(w http.ResponseWriter, r *http.Request) {
+		r = requestWithID(r)
+
+		if r.Method != http.MethodPost {
+			ans := apiError{
+				Code:    http.StatusMethodNotAllowed,
+				Message: "Method not allowed",
+			}
+			renderJSON(w, http.StatusMethodNotAllowed, ans)
+			return
+		}
+
+		ans.apiExportSheets(w, r)
+	})
+
+	// Import queries/keywords from Google Sheets into new pending jobs
+	mux.HandleFunc("/api/v1/import/sheets", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			ans := apiError{
+				Code:    http.StatusMethodNotAllowed,
+				Message: "Method not allowed",
+			}
+			renderJSON(w, http.StatusMethodNotAllowed, ans)
+			return
+		}
+
+		ans.apiImportSheets(w, r)
+	})
+
 	handler := securityHeaders(mux)
 	ans.srv.Handler = handler
 
@@ -716,4 +746,121 @@ func (s *Server) apiStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	renderJSON(w, http.StatusOK, payload)
+}
+
+// apiExportSheets handles exporting a job's CSV results to Google Sheets.
+// POST /api/v1/jobs/{id}/export/sheets
+// Body (optional):
+//
+//	{ "sheet_id": "...", "range": "Sheet1!A1", "mode": "append|overwrite" }
+func (s *Server) apiExportSheets(w http.ResponseWriter, r *http.Request) {
+	id, ok := getIDFromRequest(r)
+	if !ok {
+		apiError := apiError{
+			Code:    http.StatusUnprocessableEntity,
+			Message: "Invalid ID",
+		}
+		renderJSON(w, http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	var req struct {
+		SheetID string `json:"sheet_id"`
+		Range   string `json:"range"`
+		Mode    string `json:"mode"`
+	}
+
+	// Try JSON first
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		ans := apiError{
+			Code:    http.StatusUnprocessableEntity,
+			Message: err.Error(),
+		}
+		renderJSON(w, http.StatusUnprocessableEntity, ans)
+		return
+	}
+
+	// Fallback to form-encoded (HTMX default)
+	if req.SheetID == "" && req.Range == "" && req.Mode == "" {
+		_ = r.ParseForm()
+		req.SheetID = strings.TrimSpace(r.Form.Get("sheet_id"))
+		req.Range = strings.TrimSpace(r.Form.Get("range"))
+		req.Mode = strings.TrimSpace(r.Form.Get("mode"))
+	}
+
+	appendMode := strings.ToLower(strings.TrimSpace(req.Mode)) == "append"
+
+	if err := s.svc.ExportJobToSheets(r.Context(), id.String(), strings.TrimSpace(req.SheetID), strings.TrimSpace(req.Range), appendMode); err != nil {
+		ans := apiError{
+			Code:    http.StatusInternalServerError,
+			Message: err.Error(),
+		}
+		renderJSON(w, http.StatusInternalServerError, ans)
+		return
+	}
+
+	renderJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+// apiImportSheets creates pending jobs from a Google Sheet's first column.
+// POST /api/v1/import/sheets
+// Body:
+//
+//	{ "sheet_id": "...", "range": "Sheet1!A1:A1000", "lang": "en", "depth": 10, "max_time_seconds": 600 }
+func (s *Server) apiImportSheets(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SheetID        string `json:"sheet_id"`
+		Range          string `json:"range"`
+		Lang           string `json:"lang"`
+		Depth          int    `json:"depth"`
+		MaxTimeSeconds int    `json:"max_time_seconds"`
+	}
+
+	// Try JSON body
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		ans := apiError{
+			Code:    http.StatusUnprocessableEntity,
+			Message: err.Error(),
+		}
+		renderJSON(w, http.StatusUnprocessableEntity, ans)
+		return
+	}
+
+	// Fallback to form-encoded
+	if req.SheetID == "" && req.Range == "" && req.Lang == "" && req.Depth == 0 && req.MaxTimeSeconds == 0 {
+		_ = r.ParseForm()
+		req.SheetID = strings.TrimSpace(r.Form.Get("sheet_id"))
+		req.Range = strings.TrimSpace(r.Form.Get("range"))
+		req.Lang = strings.TrimSpace(r.Form.Get("lang"))
+		if d := strings.TrimSpace(r.Form.Get("depth")); d != "" {
+			if v, err := strconv.Atoi(d); err == nil {
+				req.Depth = v
+			}
+		}
+		if mt := strings.TrimSpace(r.Form.Get("max_time_seconds")); mt != "" {
+			if v, err := strconv.Atoi(mt); err == nil {
+				req.MaxTimeSeconds = v
+			}
+		}
+	}
+
+	maxDur := time.Duration(req.MaxTimeSeconds) * time.Second
+	created, err := s.svc.ImportQueriesFromSheet(r.Context(), strings.TrimSpace(req.SheetID), strings.TrimSpace(req.Range), strings.TrimSpace(req.Lang), req.Depth, maxDur)
+	if err != nil {
+		ans := apiError{
+			Code:    http.StatusInternalServerError,
+			Message: err.Error(),
+		}
+		renderJSON(w, http.StatusInternalServerError, ans)
+		return
+	}
+
+	// Render the newly created jobs as HTML and append to the list via HTMX
+	tmpl, ok := s.tmpl["static/templates/job_rows.html"]
+	if !ok {
+		http.Error(w, "missing tpl", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = tmpl.Execute(w, created)
 }

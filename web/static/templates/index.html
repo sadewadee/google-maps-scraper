@@ -56,6 +56,46 @@
                 </div>
             </section>
 
+            <!-- Import from Google Sheets -->
+            <section class="import">
+                <div class="section-header">
+                    <h2>Import from Google Sheets</h2>
+                    <p class="muted">Provide Spreadsheet ID and range. First column cells become job keywords.</p>
+                </div>
+                <form
+                    hx-post="/api/v1/import/sheets"
+                    hx-target="#job-list"
+                    hx-swap="beforeend"
+                    hx-indicator="#spinner"
+                    hx-ext="json-enc"
+                >
+                    <fieldset>
+                        <div class="form-group">
+                            <label for="sheet_id">Spreadsheet ID</label>
+                            <input type="text" id="sheet_id" name="sheet_id" placeholder="1AbcYourSheetID">
+                        </div>
+                        <div class="form-group">
+                            <label for="range">Range</label>
+                            <input type="text" id="range" name="range" value="Sheet1!A1:A1000">
+                        </div>
+                        <div class="form-group">
+                            <label for="lang">Language</label>
+                            <input type="text" id="lang" name="lang" value="en">
+                        </div>
+                        <div class="form-group">
+                            <label for="depth">Depth</label>
+                            <input type="number" id="depth" name="depth" value="10" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="max_time_seconds">Max Time (seconds)</label>
+                            <input type="number" id="max_time_seconds" name="max_time_seconds" value="600" step="1">
+                        </div>
+                    </fieldset>
+                    <div class="form-actions">
+                        <button type="submit" class="button">Import</button>
+                    </div>
+                </form>
+            </section>
             <!-- Minimal new job modal -->
             <div id="new-job-modal" class="modal" aria-hidden="true">
                 <div class="modal-backdrop" onclick="closeModal()"></div>

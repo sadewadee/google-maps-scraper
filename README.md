@@ -163,6 +163,56 @@ The Google Maps Scraper provides a RESTful API for programmatic management of sc
 For detailed API documentation, refer to the OpenAPI 3.0.3 specification available through Swagger UI or Redoc when running the app https://localhost:8080/api/docs
 
 
+## Google Sheets Integration (Export/Import)
+
+Server-side integration allows exporting job CSV results to Google Sheets and importing keywords from a Sheet to create jobs. This uses a Google Service Account.
+
+Configuration
+- Place your service account JSON in the repository under: keys/credentials.json
+- Set environment variables:
+  - GOOGLE_SHEETS_CREDENTIALS_JSON=/absolute/path/to/keys/credentials.json
+  - GOOGLE_SHEETS_DEFAULT_SPREADSHEET_ID=1AbcYourSheetID
+  - GOOGLE_SHEETS_DEFAULT_RANGE=Sheet1!A1 (optional; defaults to Sheet1!A1)
+
+Core implementation references
+- Export CSV to Sheets: [web.Service.ExportJobToSheets()](web/service.go:89)
+- Import queries from Sheets: [web.Service.ImportQueriesFromSheet()](web/service.go:162)
+- Sheets client initialization with service account: [web.newSheetsService()](web/service.go:240)
+- API endpoints:
+  - POST /api/v1/jobs/{id}/export/sheets → [web.Server.apiExportSheets()](web/web.go:739)
+  - POST /api/v1/import/sheets → [web.Server.apiImportSheets()](web/web.go:778)
+
+Run the Web UI with env configured
+```bash
+export GOOGLE_SHEETS_CREDENTIALS_JSON="$(pwd)/keys/credentials.json"
+export GOOGLE_SHEETS_DEFAULT_SPREADSHEET_ID="1AbcYourSheetID"
+export GOOGLE_SHEETS_DEFAULT_RANGE="Sheet1!A1"
+go run ./main.go -web -data-folder ./webdata
+```
+
+Usage: Export to Google Sheets
+- In the Jobs list, click “Export to Sheets” on a completed job card. It will append rows to the default spreadsheet/range set via env.
+- Programmatically:
+  ```bash
+  curl -X POST "http://localhost:8080/api/v1/jobs/{id}/export/sheets" \
+    -H "Content-Type: application/json" \
+    -d '{"sheet_id":"1AbcYourSheetID", "range":"Sheet1!A1", "mode":"append"}'
+  ```
+  Omitting sheet_id/range uses defaults from env. Set mode to "overwrite" to replace the target range instead of appending.
+
+Usage: Import queries from a Google Sheet
+- On the index page, fill the “Import from Google Sheets” form (Spreadsheet ID + range like Sheet1!A1:A1000 + language, depth, max time) and click Import. Each non-empty first-column cell becomes a pending job.
+- Programmatically:
+  ```bash
+  curl -X POST "http://localhost:8080/api/v1/import/sheets" \
+    -H "Content-Type: application/json" \
+    -d '{"sheet_id":"1AbcYourSheetID", "range":"Sheet1!A1:A1000", "lang":"en", "depth":10, "max_time_seconds":600}'
+  ```
+
+Notes
+- Ensure your service account has edit access to the target Spreadsheet.
+- keys/ is already git-ignored ([.gitignore](.gitignore:10)) so credentials aren’t committed.
+- If you see module import conflicts during build, the repository pins compatible versions in [go.mod](go.mod:299).
 ## 🌟 Support the Project!
 
 If you find this tool useful, consider giving it a **star** on GitHub.

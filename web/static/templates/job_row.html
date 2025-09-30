@@ -12,6 +12,13 @@
     <div class="card-actions">
         {{ if eq .Status "ok" }}
             <a href="/download?id={{.ID}}" download class="button download-button">Download</a>
+            <button
+                hx-post="/api/v1/jobs/{{.ID}}/export/sheets"
+                hx-vals='{"mode":"append"}'
+                hx-target="closest .job-card"
+                hx-swap="none"
+                class="button export-button"
+            >Export to Sheets</button>
         {{ end }}
         <button hx-delete="/delete?id={{.ID}}"
                 hx-target="closest .job-card"
