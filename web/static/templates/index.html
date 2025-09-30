@@ -142,6 +142,46 @@
                             </fieldset>
                         </details>
 
+                        <details class="expandable-section">
+                            <summary>Adaptive Tiling</summary>
+                            <fieldset>
+                                <div class="form-group">
+                                    <label for="bbox_min_lat">BBox Min Latitude</label>
+                                    <input type="number" step="0.000000000000001" id="bbox_min_lat" name="bbox_min_lat" value="{{.BboxMinLat}}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bbox_min_lon">BBox Min Longitude</label>
+                                    <input type="number" step="0.000000000000001" id="bbox_min_lon" name="bbox_min_lon" value="{{.BboxMinLon}}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bbox_max_lat">BBox Max Latitude</label>
+                                    <input type="number" step="0.000000000000001" id="bbox_max_lat" name="bbox_max_lat" value="{{.BboxMaxLat}}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="bbox_max_lon">BBox Max Longitude</label>
+                                    <input type="number" step="0.000000000000001" id="bbox_max_lon" name="bbox_max_lon" value="{{.BboxMaxLon}}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="split_threshold">Split Threshold</label>
+                                    <input type="number" id="split_threshold" name="split_threshold" value="{{.SplitThreshold}}" placeholder="e.g. 90">
+                                </div>
+                                <div class="form-group">
+                                    <label for="max_tiles">Max Tiles</label>
+                                    <input type="number" id="max_tiles" name="max_tiles" value="{{.MaxTiles}}" placeholder="e.g. 250000">
+                                </div>
+                                <div class="form-group">
+                                    <label for="tile_system">Tile System</label>
+                                    <select id="tile_system" name="tile_system">
+                                        <option value="s2" {{if eq .TileSystem "s2"}}selected{{end}}>S2</option>
+                                        <option value="h3" {{if eq .TileSystem "h3"}}selected{{end}}>H3</option>
+                                    </select>
+                                </div>
+                                <div class="form-group checkbox">
+                                    <input type="checkbox" id="static_first" name="static_first" {{if .StaticFirst}}checked{{end}}>
+                                    <label for="static_first">Static pb-first (browser fallback on failure)</label>
+                                </div>
+                            </fieldset>
+                        </details>
                         <div class="modal-actions">
                             <button type="submit">Create Job</button>
                             <button type="button" class="button" onclick="closeModal()">Cancel</button>

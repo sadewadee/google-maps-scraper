@@ -179,6 +179,16 @@ type formData struct {
 	Depth    int
 	Email    bool
 	Proxies  []string
+
+	// Bounding box & tiling controls for adaptive query splitting
+	BboxMinLat     string
+	BboxMinLon     string
+	BboxMaxLat     string
+	BboxMaxLon     string
+	SplitThreshold int
+	MaxTiles       int
+	TileSystem     string
+	StaticFirst    bool
 }
 
 type ctxKey string
@@ -241,6 +251,16 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		Lon:      "0",
 		Depth:    10,
 		Email:    false,
+
+		// bbox and tiling defaults
+		BboxMinLat:     "",
+		BboxMinLon:     "",
+		BboxMaxLat:     "",
+		BboxMaxLon:     "",
+		SplitThreshold: 90,
+		MaxTiles:       250000,
+		TileSystem:     "s2",
+		StaticFirst:    true,
 	}
 
 	_ = tmpl.Execute(w, data)
@@ -333,6 +353,28 @@ func (s *Server) scrape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newJob.Data.Email = r.Form.Get("email") == "on"
+
+	// Optional tiling & bbox controls
+	newJob.Data.BboxMinLat = r.Form.Get("bbox_min_lat")
+	newJob.Data.BboxMinLon = r.Form.Get("bbox_min_lon")
+	newJob.Data.BboxMaxLat = r.Form.Get("bbox_max_lat")
+	newJob.Data.BboxMaxLon = r.Form.Get("bbox_max_lon")
+
+	if st := strings.TrimSpace(r.Form.Get("split_threshold")); st != "" {
+		if v, err := strconv.Atoi(st); err == nil {
+			newJob.Data.SplitThreshold = v
+		}
+	}
+	if mt := strings.TrimSpace(r.Form.Get("max_tiles")); mt != "" {
+		if v, err := strconv.Atoi(mt); err == nil {
+			newJob.Data.MaxTiles = v
+		}
+	}
+	ts := strings.TrimSpace(r.Form.Get("tile_system"))
+	if ts != "" {
+		newJob.Data.TileSystem = ts
+	}
+	newJob.Data.StaticFirst = r.Form.Get("static_first") == "on"
 
 	proxies := strings.Split(r.Form.Get("proxies"), "\n")
 	if len(proxies) > 0 {

@@ -79,6 +79,12 @@ type Config struct {
 	Addr                     string
 	DisablePageReuse         bool
 	ExtraReviews             bool
+
+	// Adaptive tiling defaults for web runner and CLI mode
+	SplitThreshold int
+	MaxTiles       int
+	TileSystem     string
+	StaticFirst    bool
 }
 
 func ParseConfig() *Config {
@@ -125,6 +131,12 @@ func ParseConfig() *Config {
 	flag.StringVar(&cfg.Addr, "addr", ":8080", "address to listen on for web server")
 	flag.BoolVar(&cfg.DisablePageReuse, "disable-page-reuse", false, "disable page reuse in playwright")
 	flag.BoolVar(&cfg.ExtraReviews, "extra-reviews", false, "enable extra reviews collection")
+
+	// Adaptive tiling CLI flags
+	flag.IntVar(&cfg.SplitThreshold, "split-threshold", 90, "tiling split threshold (approximate cap trigger)")
+	flag.IntVar(&cfg.MaxTiles, "max-tiles", 250000, "maximum initial tiles to seed for bbox tiling")
+	flag.StringVar(&cfg.TileSystem, "tile-system", "s2", "tile system to use for tiling (s2|h3; experimental)")
+	flag.BoolVar(&cfg.StaticFirst, "static-first", true, "prefer static pb path first with browser fallback")
 
 	flag.Parse()
 

@@ -131,9 +131,10 @@ func (w *webrunner) work(ctx context.Context) error {
 }
 
 func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
+	var err error
 	job.Status = web.StatusWorking
 
-	err := w.svc.Update(ctx, job)
+	err = w.svc.Update(ctx, job)
 	if err != nil {
 		return err
 	}
@@ -177,25 +178,84 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 	dedup := deduper.New()
 	exitMonitor := exiter.New()
 
-	seedJobs, err := runner.CreateSeedJobs(
-		job.Data.FastMode,
-		job.Data.Lang,
-		strings.NewReader(strings.Join(job.Data.Keywords, "\n")),
-		job.Data.Depth,
-		job.Data.Email,
-		coords,
-		job.Data.Zoom,
-		func() float64 {
+	var seedJobs []scrapemate.IJob
+
+	// If bbox provided, use adaptive tiling with static pb-first seeds
+	hasBBox := job.Data.BboxMinLat != "" && job.Data.BboxMinLon != "" && job.Data.BboxMaxLat != "" && job.Data.BboxMaxLon != ""
+	if hasBBox {
+		// Use job-specified tiling settings, falling back to runner config defaults
+		splitThreshold := job.Data.SplitThreshold
+		if splitThreshold <= 0 {
+			if w.cfg.SplitThreshold > 0 {
+				splitThreshold = w.cfg.SplitThreshold
+			} else {
+				splitThreshold = 90
+			}
+		}
+		maxTiles := job.Data.MaxTiles
+		if maxTiles <= 0 {
+			if w.cfg.MaxTiles > 0 {
+				maxTiles = w.cfg.MaxTiles
+			} else {
+				maxTiles = 250000
+			}
+		}
+		staticFirst := job.Data.StaticFirst
+		if !staticFirst {
+			staticFirst = w.cfg.StaticFirst
+		}
+		minZoom := job.Data.Zoom
+		if minZoom < 1 {
+			minZoom = 10
+		}
+		maxZoom := minZoom + 3
+		if maxZoom > 21 {
+			maxZoom = 21
+		}
+		rad := func() float64 {
 			if job.Data.Radius <= 0 {
 				return 10000 // 10 km
 			}
-
 			return float64(job.Data.Radius)
-		}(),
-		dedup,
-		exitMonitor,
-		w.cfg.ExtraReviews,
-	)
+		}()
+
+		seedJobs, err = runner.CreateTiledSeedJobs(
+			job.Data.Lang,
+			strings.NewReader(strings.Join(job.Data.Keywords, "\n")),
+			job.Data.BboxMinLat,
+			job.Data.BboxMinLon,
+			job.Data.BboxMaxLat,
+			job.Data.BboxMaxLon,
+			minZoom,
+			maxZoom,
+			splitThreshold,
+			maxTiles,
+			staticFirst,
+			rad,
+			dedup,
+			exitMonitor,
+		)
+	} else {
+		seedJobs, err = runner.CreateSeedJobs(
+			job.Data.FastMode,
+			job.Data.Lang,
+			strings.NewReader(strings.Join(job.Data.Keywords, "\n")),
+			job.Data.Depth,
+			job.Data.Email,
+			coords,
+			job.Data.Zoom,
+			func() float64 {
+				if job.Data.Radius <= 0 {
+					return 10000 // 10 km
+				}
+
+				return float64(job.Data.Radius)
+			}(),
+			dedup,
+			exitMonitor,
+			w.cfg.ExtraReviews,
+		)
+	}
 	if err != nil {
 		err2 := w.svc.Update(ctx, job)
 		if err2 != nil {

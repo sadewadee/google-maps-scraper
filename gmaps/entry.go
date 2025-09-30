@@ -692,3 +692,22 @@ func filterAndSortEntriesWithinRadius(entries []*Entry, lat, lon, radius float64
 
 	return slices.Collect(iter.Seq[*Entry](resultIterator))
 }
+
+// BuildEntryKey returns a canonical deduplication key for an entry across tiles.
+// Preference order: DataID, PlusCode, Cid; fallback to normalized title+lat+lon.
+func BuildEntryKey(e *Entry) string {
+	if e == nil {
+		return ""
+	}
+	if e.DataID != "" {
+		return "data_id:" + e.DataID
+	}
+	if e.PlusCode != "" {
+		return "plus:" + e.PlusCode
+	}
+	if e.Cid != "" {
+		return "cid:" + e.Cid
+	}
+	ttl := strings.ToLower(strings.TrimSpace(e.Title))
+	return fmt.Sprintf("ttl:%0.6f:%0.6f:%s", e.Latitude, e.Longtitude, ttl)
+}

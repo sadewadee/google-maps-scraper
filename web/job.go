@@ -73,6 +73,18 @@ type JobData struct {
 	Email    bool          `json:"email"`
 	MaxTime  time.Duration `json:"max_time"`
 	Proxies  []string      `json:"proxies"`
+
+	// Bounding box for adaptive tiling (city/country scope)
+	BboxMinLat string `json:"bbox_min_lat,omitempty"`
+	BboxMinLon string `json:"bbox_min_lon,omitempty"`
+	BboxMaxLat string `json:"bbox_max_lat,omitempty"`
+	BboxMaxLon string `json:"bbox_max_lon,omitempty"`
+
+	// Tiling controls
+	SplitThreshold int    `json:"split_threshold,omitempty"` // per-tile result threshold to trigger subdivision
+	MaxTiles       int    `json:"max_tiles,omitempty"`       // safety cap for tiles per job
+	TileSystem     string `json:"tile_system,omitempty"`     // "s2" (default) or "h3"
+	StaticFirst    bool   `json:"static_first,omitempty"`    // prefer static pb path first
 }
 
 // ServiceStats represents aggregate statistics for the dashboard API.
@@ -104,8 +116,16 @@ func (d *JobData) Validate() error {
 		return errors.New("missing max time")
 	}
 
+	// Fast mode requires a single lat/lon center
 	if d.FastMode && (d.Lat == "" || d.Lon == "") {
 		return errors.New("missing geo coordinates")
+	}
+
+	// If any bbox field is provided, require all four
+	if d.BboxMinLat != "" || d.BboxMinLon != "" || d.BboxMaxLat != "" || d.BboxMaxLon != "" {
+		if d.BboxMinLat == "" || d.BboxMinLon == "" || d.BboxMaxLat == "" || d.BboxMaxLon == "" {
+			return errors.New("incomplete bbox: require bbox_min_lat, bbox_min_lon, bbox_max_lat, bbox_max_lon")
+		}
 	}
 
 	return nil
