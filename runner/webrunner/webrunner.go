@@ -208,38 +208,39 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 	if len(seedJobs) > 0 {
 		exitMonitor.SetSeedCount(len(seedJobs))
 
-		allowedSeconds := max(60, len(seedJobs)*10*job.Data.Depth/50+120)
+		// Per-query timeout instead of per-job
+		perQuerySeconds := max(60, 10*job.Data.Depth/50+120)
 
 		if job.Data.MaxTime > 0 {
 			if job.Data.MaxTime.Seconds() < 180 {
-				allowedSeconds = 180
+				perQuerySeconds = 180
 			} else {
-				allowedSeconds = int(job.Data.MaxTime.Seconds())
+				perQuerySeconds = int(job.Data.MaxTime.Seconds())
 			}
 		}
 
-		log.Printf("running job %s with %d seed jobs and %d allowed seconds", job.ID, len(seedJobs), allowedSeconds)
+		for i := range seedJobs {
+			log.Printf("running job %s seed %d/%d with %d allowed seconds", job.ID, i+1, len(seedJobs), perQuerySeconds)
 
-		mateCtx, cancel := context.WithTimeout(ctx, time.Duration(allowedSeconds)*time.Second)
-		defer cancel()
+			mateCtx, cancel := context.WithTimeout(ctx, time.Duration(perQuerySeconds)*time.Second)
 
-		exitMonitor.SetCancelFunc(cancel)
+			exitMonitor.SetCancelFunc(cancel)
+			go exitMonitor.Run(mateCtx)
 
-		go exitMonitor.Run(mateCtx)
+			err = mate.Start(mateCtx, seedJobs[i])
+			if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+				cancel()
 
-		err = mate.Start(mateCtx, seedJobs...)
-		if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+				err2 := w.svc.Update(ctx, job)
+				if err2 != nil {
+					log.Printf("failed to update job status: %v", err2)
+				}
+
+				return err
+			}
+
 			cancel()
-
-			err2 := w.svc.Update(ctx, job)
-			if err2 != nil {
-				log.Printf("failed to update job status: %v", err2)
-			}
-
-			return err
 		}
-
-		cancel()
 	}
 
 	mate.Close()

@@ -85,6 +85,8 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 
 	j.Entry.Emails = emails
 
+	socialMediaExtractor(doc, j.Entry)
+
 	return j.Entry, nil, nil
 }
 
@@ -113,10 +115,42 @@ func docEmailExtractor(doc *goquery.Document) []string {
 	return emails
 }
 
+func socialMediaExtractor(doc *goquery.Document, entry *Entry) {
+	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
+		href, exists := s.Attr("href")
+		if !exists {
+			return
+		}
+
+		if entry.Facebook == "" && strings.Contains(href, "facebook.com") {
+			entry.Facebook = href
+		}
+
+		if entry.Instagram == "" && strings.Contains(href, "instagram.com") {
+			entry.Instagram = href
+		}
+
+		if entry.LinkedIn == "" && strings.Contains(href, "linkedin.com") {
+			entry.LinkedIn = href
+		}
+
+		if entry.WhatsApp == "" && (strings.Contains(href, "whatsapp.com") || strings.Contains(href, "wa.me")) {
+			entry.WhatsApp = href
+		}
+	})
+}
+
 func regexEmailExtractor(body []byte) []string {
 	seen := map[string]bool{}
 
 	var emails []string
+
+	// Deobfuscate email addresses
+	sBody := string(body)
+	sBody = strings.ReplaceAll(sBody, "[at]", "@")
+	sBody = strings.ReplaceAll(sBody, "(at)", "@")
+	sBody = strings.ReplaceAll(sBody, " at ", "@")
+	body = []byte(sBody)
 
 	addresses := emailaddress.Find(body, false)
 	for i := range addresses {

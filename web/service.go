@@ -21,6 +21,9 @@ func NewService(repo JobRepository, dataFolder string) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, job *Job) error {
+	if job.Name == "" && len(job.Data.Keywords) > 0 {
+		job.Name = job.Data.Keywords[0]
+	}
 	return s.repo.Create(ctx, job)
 }
 

@@ -40,15 +40,15 @@
         <main>
             <div class="sidebar">
                 <div id="error-container" class="error-message"></div>
-                <form 
-                    hx-post="/scrape" 
-                    hx-target="#job-table tbody" 
+                <form
+                    hx-post="/scrape"
+                    hx-target="#job-table tbody"
                     hx-swap="beforeend"
                     hx-indicator="#spinner"
                     hx-on::before-request="document.getElementById('error-container').innerHTML = ''"
                     hx-on::after-request="if(!event.detail.successful) document.getElementById('error-container').innerHTML = event.detail.xhr.responseText"
                 >
-                    
+
                     <fieldset>
                         <legend>Job Details</legend>
                         <div class="form-group">
@@ -64,7 +64,7 @@
                             <input type="text" id="lang" name="lang" value="{{.Language}}">
                         </div>
                     </fieldset>
-                    
+
                     <details class="expandable-section">
                         <summary>Location Settings</summary>
                         <fieldset>
@@ -82,7 +82,7 @@
                             </div>
                         </fieldset>
                     </details>
-                    
+
                     <details class="expandable-section">
                         <summary>Advanced Options</summary>
                         <fieldset>
@@ -103,7 +103,7 @@
                                 <label for="email">Fetch Emails</label>
                             </div>
                             <div class="form-group">
-                                <label for="maxtime">Max job time:</label>
+                                <label for="maxtime">Max query time:</label>
                                 <input type="text" id="maxtime" name="maxtime" value="{{.MaxTime}}">
                             </div>
                         </fieldset>
@@ -123,7 +123,7 @@
                             </div>
                         </fieldset>
                     </details>
-                    
+
                     <button type="submit">Start Scraping</button>
                 </form>
             </div>

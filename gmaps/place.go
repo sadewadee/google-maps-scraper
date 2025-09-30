@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/gosom/scrapemate"
@@ -55,9 +54,16 @@ func NewPlaceJob(parentID, langCode, u string, extractEmail, extraExtraReviews b
 }
 
 func WithPlaceJobExitMonitor(exitMonitor exiter.Exiter) PlaceJobOptions {
-	return func(j *PlaceJob) {
-		j.ExitMonitor = exitMonitor
-	}
+    return func(j *PlaceJob) {
+        j.ExitMonitor = exitMonitor
+    }
+}
+
+// UseInResults controls whether this job's Process output is written to results.
+// When the PlaceJob redirects to an EmailExtractJob, it returns nil data and
+// should not be written; we toggle the internal flag accordingly.
+func (j *PlaceJob) UseInResults() bool {
+    return j.UsageInResultststs
 }
 
 func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, []scrapemate.IJob, error) {
@@ -190,32 +196,9 @@ func (j *PlaceJob) extractJSON(page playwright.Page) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("could not convert to string")
 	}
-
-	const prefix = `)]}'`
-
+	const prefix = ")]}'"
 	raw = strings.TrimSpace(strings.TrimPrefix(raw, prefix))
-
 	return []byte(raw), nil
-}
-
-func (j *PlaceJob) getReviewCount(data []byte) int {
-	tmpEntry, err := EntryFromJSON(data, true)
-	if err != nil {
-		return 0
-	}
-
-	return tmpEntry.ReviewCount
-}
-
-func (j *PlaceJob) UseInResults() bool {
-	return j.UsageInResultststs
-}
-
-func ctxWait(ctx context.Context, dur time.Duration) {
-	select {
-	case <-ctx.Done():
-	case <-time.After(dur):
-	}
 }
 
 const js = `
@@ -232,3 +215,13 @@ function parse() {
 	return null;
 }
 `
+
+// getReviewCount extracts only the review count from the raw place JSON
+func (j *PlaceJob) getReviewCount(raw []byte) int {
+	entry, err := EntryFromJSON(raw, true)
+	if err != nil {
+		return 0
+	}
+
+	return entry.ReviewCount
+}
