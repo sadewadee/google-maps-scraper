@@ -95,7 +95,8 @@ func ParseConfig() *Config {
 		proxies string
 	)
 
-	flag.IntVar(&cfg.Concurrency, "c", min(runtime.NumCPU()/2, 1), "sets the concurrency [default: half of CPU cores]")
+    // Default concurrency should allow parallelism. Using max to avoid forcing 1.
+    flag.IntVar(&cfg.Concurrency, "c", max(runtime.NumCPU()/2, 1), "sets the concurrency [default: half of CPU cores]")
 	flag.StringVar(&cfg.CacheDir, "cache", "cache", "sets the cache directory [no effect at the moment]")
 	flag.IntVar(&cfg.MaxDepth, "depth", 10, "maximum scroll depth in search results [default: 10]")
 	flag.StringVar(&cfg.ResultsFile, "results", "stdout", "path to the results file [default: stdout]")
@@ -295,9 +296,17 @@ func banner(messages []string, width int) string {
 }
 
 func Banner() {
-	message1 := "🌍 Google Maps Scraper"
-	message2 := "⭐ If you find this project useful, please star it on GitHub: https://github.com/gosom/google-maps-scraper"
-	message3 := "💖 Consider sponsoring to support development: https://github.com/sponsors/gosom"
+    message1 := "🌍 Google Maps Scraper"
+    message2 := "⭐ If you find this project useful, please star it on GitHub: https://github.com/gosom/google-maps-scraper"
+    message3 := "💖 Consider sponsoring to support development: https://github.com/sponsors/gosom"
 
-	fmt.Fprintln(os.Stderr, banner([]string{message1, message2, message3}, 0))
+    fmt.Fprintln(os.Stderr, banner([]string{message1, message2, message3}, 0))
+}
+
+// max returns the greater of a or b (int).
+func max(a, b int) int {
+    if a > b {
+        return a
+    }
+    return b
 }

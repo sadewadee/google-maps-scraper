@@ -3,6 +3,8 @@ package web
 import (
 	"context"
 	"embed"
+	"bufio"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -56,6 +58,11 @@ func New(svc *Service, addr string) (*Server, error) {
 		r = requestWithID(r)
 
 		ans.download(w, r)
+	})
+	mux.HandleFunc("/download-metadata-csv", func(w http.ResponseWriter, r *http.Request) {
+		r = requestWithID(r)
+
+		ans.downloadMetadataCSV(w, r)
 	})
 	mux.HandleFunc("/delete", func(w http.ResponseWriter, r *http.Request) {
 		r = requestWithID(r)
@@ -116,6 +123,23 @@ func New(svc *Service, addr string) (*Server, error) {
 		}
 
 		ans.download(w, r)
+	})
+
+	mux.HandleFunc("/api/v1/jobs/{id}/download-metadata-csv", func(w http.ResponseWriter, r *http.Request) {
+		r = requestWithID(r)
+
+		if r.Method != http.MethodGet {
+			ans := apiError{
+				Code:    http.StatusMethodNotAllowed,
+				Message: "Method not allowed",
+			}
+
+			renderJSON(w, http.StatusMethodNotAllowed, ans)
+
+			return
+		}
+
+		ans.downloadMetadataCSV(w, r)
 	})
 
 	handler := securityHeaders(mux)
@@ -424,15 +448,139 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	fileName := filepath.Base(filePath)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fileName))
-	w.Header().Set("Content-Type", "text/csv")
+    fileName := filepath.Base(filePath)
+    w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fileName))
+    // Set content type based on file extension
+    if strings.HasSuffix(strings.ToLower(fileName), ".json") {
+        w.Header().Set("Content-Type", "application/json")
+    } else {
+        w.Header().Set("Content-Type", "text/csv")
+    }
 
 	_, err = io.Copy(w, file)
 	if err != nil {
 		http.Error(w, "Failed to send file", http.StatusInternalServerError)
 		return
 	}
+}
+
+// downloadMetadataCSV streams a lightweight CSV built from Croxy JSON results.
+// If the job has a CSV file already, it streams that file as-is.
+func (s *Server) downloadMetadataCSV(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+
+        return
+    }
+
+    ctx := r.Context()
+
+    id, ok := getIDFromRequest(r)
+    if !ok {
+        http.Error(w, "Invalid ID", http.StatusUnprocessableEntity)
+
+        return
+    }
+
+    filePath, err := s.svc.GetCSV(ctx, id.String())
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusNotFound)
+        return
+    }
+
+    // If the result is already CSV, just stream it.
+    if strings.HasSuffix(strings.ToLower(filePath), ".csv") {
+        file, err := os.Open(filePath)
+        if err != nil {
+            http.Error(w, "Failed to open file", http.StatusInternalServerError)
+            return
+        }
+        defer file.Close()
+
+        fileName := filepath.Base(filePath)
+        w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fileName))
+        w.Header().Set("Content-Type", "text/csv")
+
+        if _, err := io.Copy(w, file); err != nil {
+            http.Error(w, "Failed to send file", http.StatusInternalServerError)
+        }
+
+        return
+    }
+
+    // Otherwise, assume JSON and produce a metadata CSV on the fly.
+    file, err := os.Open(filePath)
+    if err != nil {
+        http.Error(w, "Failed to open file", http.StatusInternalServerError)
+        return
+    }
+    defer file.Close()
+
+    outName := fmt.Sprintf("%s-metadata.csv", id.String())
+    w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", outName))
+    w.Header().Set("Content-Type", "text/csv")
+
+    cw := csv.NewWriter(w)
+    // Write headers
+    _ = cw.Write([]string{"url", "status", "content_length", "error"})
+
+    // Try line-delimited JSON first
+    scanner := bufio.NewScanner(file)
+    scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024) // up to 10MB per line
+    processed := 0
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())
+        if line == "" {
+            continue
+        }
+        var obj map[string]any
+        if err := json.Unmarshal([]byte(line), &obj); err != nil {
+            // If it fails, fall back to array mode later
+            processed = -1
+            break
+        }
+        url := stringify(obj["url"]) 
+        status := stringify(obj["status"]) 
+        content := stringify(obj["content"]) 
+        errStr := stringify(obj["error"]) 
+        contentLen := fmt.Sprintf("%d", len(content))
+        _ = cw.Write([]string{url, status, contentLen, errStr})
+        processed++
+    }
+    if err := scanner.Err(); err != nil && processed >= 0 {
+        // Scanner failed mid-way
+        http.Error(w, "Failed to read JSON", http.StatusInternalServerError)
+        return
+    }
+
+    if processed == -1 {
+        // Fall back: JSON array in the file
+        // Rewind and decode as array
+        if _, err := file.Seek(0, 0); err != nil {
+            http.Error(w, "Failed to rewind file", http.StatusInternalServerError)
+            return
+        }
+        var arr []map[string]any
+        dec := json.NewDecoder(file)
+        if err := dec.Decode(&arr); err != nil {
+            http.Error(w, "Failed to parse JSON results", http.StatusInternalServerError)
+            return
+        }
+        for _, obj := range arr {
+            url := stringify(obj["url"]) 
+            status := stringify(obj["status"]) 
+            content := stringify(obj["content"]) 
+            errStr := stringify(obj["error"]) 
+            contentLen := fmt.Sprintf("%d", len(content))
+            _ = cw.Write([]string{url, status, contentLen, errStr})
+        }
+    }
+
+    cw.Flush()
+    if err := cw.Error(); err != nil {
+        http.Error(w, "Failed to write CSV", http.StatusInternalServerError)
+        return
+    }
 }
 
 func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
@@ -640,4 +788,20 @@ func securityHeaders(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// stringify converts arbitrary values to string for CSV fields.
+// Local helper to avoid importing from other packages.
+func stringify(v any) string {
+    switch val := v.(type) {
+    case string:
+        return val
+    case float64:
+        return fmt.Sprintf("%f", val)
+    case nil:
+        return ""
+    default:
+        d, _ := json.Marshal(v)
+        return string(d)
+    }
 }

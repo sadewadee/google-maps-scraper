@@ -33,19 +33,29 @@ func (s *Service) Get(ctx context.Context, id string) (Job, error) {
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
-	if strings.Contains(id, "/") || strings.Contains(id, "\\") || strings.Contains(id, "..") {
-		return fmt.Errorf("invalid file name")
-	}
+    if strings.Contains(id, "/") || strings.Contains(id, "\\") || strings.Contains(id, "..") {
+        return fmt.Errorf("invalid file name")
+    }
 
-	datapath := filepath.Join(s.dataFolder, id+".csv")
+    // Remove CSV or JSON result files if they exist
+    csvPath := filepath.Join(s.dataFolder, id+".csv")
+    jsonPath := filepath.Join(s.dataFolder, id+".json")
 
-	if _, err := os.Stat(datapath); err == nil {
-		if err := os.Remove(datapath); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
+    if _, err := os.Stat(csvPath); err == nil {
+        if err := os.Remove(csvPath); err != nil {
+            return err
+        }
+    } else if !os.IsNotExist(err) {
+        return err
+    }
+
+    if _, err := os.Stat(jsonPath); err == nil {
+        if err := os.Remove(jsonPath); err != nil {
+            return err
+        }
+    } else if !os.IsNotExist(err) {
+        return err
+    }
 
 	return s.repo.Delete(ctx, id)
 }
@@ -59,15 +69,20 @@ func (s *Service) SelectPending(ctx context.Context) ([]Job, error) {
 }
 
 func (s *Service) GetCSV(_ context.Context, id string) (string, error) {
-	if strings.Contains(id, "/") || strings.Contains(id, "\\") || strings.Contains(id, "..") {
-		return "", fmt.Errorf("invalid file name")
-	}
+    if strings.Contains(id, "/") || strings.Contains(id, "\\") || strings.Contains(id, "..") {
+        return "", fmt.Errorf("invalid file name")
+    }
 
-	datapath := filepath.Join(s.dataFolder, id+".csv")
+    // Prefer CSV, but fall back to JSON if CSV does not exist
+    csvPath := filepath.Join(s.dataFolder, id+".csv")
+    if _, err := os.Stat(csvPath); err == nil {
+        return csvPath, nil
+    }
 
-	if _, err := os.Stat(datapath); os.IsNotExist(err) {
-		return "", fmt.Errorf("csv file not found for job %s", id)
-	}
+    jsonPath := filepath.Join(s.dataFolder, id+".json")
+    if _, err := os.Stat(jsonPath); err == nil {
+        return jsonPath, nil
+    }
 
-	return datapath, nil
+    return "", fmt.Errorf("result file not found for job %s", id)
 }

@@ -1,27 +1,27 @@
 package webrunner
 
 import (
-	"context"
-	"encoding/csv"
-	"errors"
-	"fmt"
-	"io"
-	"log"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
+    "context"
+    "encoding/csv"
+    "errors"
+    "fmt"
+    "io"
+    "log"
+    "os"
+    "path/filepath"
+    "strings"
+    "time"
 
-	"github.com/gosom/google-maps-scraper/deduper"
-	"github.com/gosom/google-maps-scraper/exiter"
-	"github.com/gosom/google-maps-scraper/runner"
-	"github.com/gosom/google-maps-scraper/tlmt"
-	"github.com/gosom/google-maps-scraper/web"
-	"github.com/gosom/google-maps-scraper/web/sqlite"
-	"github.com/gosom/scrapemate"
-	"github.com/gosom/scrapemate/adapters/writers/csvwriter"
-	"github.com/gosom/scrapemate/scrapemateapp"
-	"golang.org/x/sync/errgroup"
+    "github.com/gosom/google-maps-scraper/deduper"
+    "github.com/gosom/google-maps-scraper/exiter"
+    "github.com/gosom/google-maps-scraper/runner"
+    "github.com/gosom/google-maps-scraper/tlmt"
+    "github.com/gosom/google-maps-scraper/web"
+    "github.com/gosom/google-maps-scraper/web/sqlite"
+    "github.com/gosom/scrapemate"
+    "github.com/gosom/scrapemate/adapters/writers/csvwriter"
+    "github.com/gosom/scrapemate/scrapemateapp"
+    "golang.org/x/sync/errgroup"
 )
 
 type webrunner struct {
@@ -144,7 +144,8 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 		return w.svc.Update(ctx, job)
 	}
 
-	outpath := filepath.Join(w.cfg.DataFolder, job.ID+".csv")
+    // Normalize output to CSV for all jobs (including Croxy)
+    outpath := filepath.Join(w.cfg.DataFolder, job.ID+".csv")
 
 	outfile, err := os.Create(outpath)
 	if err != nil {
@@ -195,7 +196,7 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 		dedup,
 		exitMonitor,
 		w.cfg.ExtraReviews,
-		w.cfg.UseCroxy,
+		job.Data.UseCroxy,
 	)
 	if err != nil {
 		err2 := w.svc.Update(ctx, job)
@@ -209,19 +210,23 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 	if len(seedJobs) > 0 {
 		exitMonitor.SetSeedCount(len(seedJobs))
 
-		allowedSeconds := max(60, len(seedJobs)*10*job.Data.Depth/50+120)
-
+		// Calculate time per query instead of per job
+		var allowedSecondsPerQuery int
 		if job.Data.MaxTime > 0 {
-			if job.Data.MaxTime.Seconds() < 180 {
-				allowedSeconds = 180
-			} else {
-				allowedSeconds = int(job.Data.MaxTime.Seconds())
-			}
+			// Divide total max time by number of keywords (queries)
+			totalSeconds := int(job.Data.MaxTime.Seconds())
+			allowedSecondsPerQuery = max(180, totalSeconds/len(job.Data.Keywords)) // Minimum 3 minutes per query
+		} else {
+			// Default calculation per query
+			allowedSecondsPerQuery = max(60, len(seedJobs)*10*job.Data.Depth/50+120)
 		}
 
-		log.Printf("running job %s with %d seed jobs and %d allowed seconds", job.ID, len(seedJobs), allowedSeconds)
+		log.Printf("running job %s with %d queries, %d seconds per query (total: %d seconds)",
+			job.ID, len(job.Data.Keywords), allowedSecondsPerQuery, allowedSecondsPerQuery*len(job.Data.Keywords))
 
-		mateCtx, cancel := context.WithTimeout(ctx, time.Duration(allowedSeconds)*time.Second)
+		// Create context with total timeout (per query time * number of queries)
+		totalTimeout := time.Duration(allowedSecondsPerQuery*len(job.Data.Keywords)) * time.Second
+		mateCtx, cancel := context.WithTimeout(ctx, totalTimeout)
 		defer cancel()
 
 		exitMonitor.SetCancelFunc(cancel)
@@ -256,15 +261,22 @@ func (w *webrunner) setupMate(_ context.Context, writer io.Writer, job *web.Job)
 		scrapemateapp.WithExitOnInactivity(time.Minute * 3),
 	}
 
-	if !job.Data.FastMode {
-		opts = append(opts,
-			scrapemateapp.WithJS(scrapemateapp.DisableImages()),
-		)
-	} else {
-		opts = append(opts,
-			scrapemateapp.WithStealth("firefox"),
-		)
-	}
+    if !job.Data.FastMode {
+        if w.cfg.Debug {
+            opts = append(opts, scrapemateapp.WithJS(
+                scrapemateapp.Headfull(),
+                scrapemateapp.DisableImages(),
+            ))
+        } else {
+            opts = append(opts,
+                scrapemateapp.WithJS(scrapemateapp.DisableImages()),
+            )
+        }
+    } else {
+        opts = append(opts,
+            scrapemateapp.WithStealth("firefox"),
+        )
+    }
 
 	hasProxy := false
 
@@ -287,9 +299,7 @@ func (w *webrunner) setupMate(_ context.Context, writer io.Writer, job *web.Job)
 
 	log.Printf("job %s has proxy: %v", job.ID, hasProxy)
 
-	csvWriter := csvwriter.NewCsvWriter(csv.NewWriter(writer))
-
-	writers := []scrapemate.ResultWriter{csvWriter}
+    writers := []scrapemate.ResultWriter{csvwriter.NewCsvWriter(csv.NewWriter(writer))}
 
 	matecfg, err := scrapemateapp.NewConfig(
 		writers,

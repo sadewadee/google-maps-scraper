@@ -453,7 +453,237 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 	reviewsI := getNthElementAndCast[[]any](darray, 175, 9, 0, 0)
 	entry.UserReviews = make([]Review, 0, len(reviewsI))
 
+	// Extract social media links and additional data
+	entry.extractSocialMediaAndAdditionalData(darray)
+
 	return entry, nil
+}
+
+// extractSocialMediaAndAdditionalData extracts social media links and additional data from Google Maps JSON
+func (e *Entry) extractSocialMediaAndAdditionalData(darray []any) {
+	// Extract country code from complete address
+	if e.CompleteAddress.Country != "" {
+		e.CountryCode = getCountryCode(e.CompleteAddress.Country)
+	}
+
+	// Try to extract social media links from various locations in the JSON structure
+	// Google Maps sometimes includes social media links in different sections
+	
+	// Check for social media in about section
+	for _, about := range e.About {
+		for _, option := range about.Options {
+			if option.Enabled {
+				e.extractSocialMediaFromText(option.Name)
+			}
+		}
+	}
+
+	// Check for social media in description
+	if e.Description != "" {
+		e.extractSocialMediaFromText(e.Description)
+	}
+
+	// Check for social media in website field (sometimes contains social links)
+	if e.WebSite != "" {
+		e.extractSocialMediaFromText(e.WebSite)
+	}
+
+	// Try to extract from additional data sections that might contain social links
+	// Check section 171 (images/media section) for social links
+	mediaSection := getNthElementAndCast[[]any](darray, 171)
+	if len(mediaSection) > 0 {
+		e.extractSocialMediaFromSection(mediaSection)
+	}
+
+	// Check section 46 (reservations/links section) for social links
+	linksSection := getNthElementAndCast[[]any](darray, 46)
+	if len(linksSection) > 0 {
+		e.extractSocialMediaFromSection(linksSection)
+	}
+
+	// Check section 75 (order online/additional links) for social links
+	additionalLinksSection := getNthElementAndCast[[]any](darray, 75)
+	if len(additionalLinksSection) > 0 {
+		e.extractSocialMediaFromSection(additionalLinksSection)
+	}
+}
+
+// extractSocialMediaFromText extracts social media URLs from text content
+func (e *Entry) extractSocialMediaFromText(text string) {
+	text = strings.ToLower(text)
+	
+	// Facebook patterns
+	if strings.Contains(text, "facebook.com/") || strings.Contains(text, "fb.com/") {
+		if e.Facebook == "" {
+			e.Facebook = extractURLFromText(text, []string{"facebook.com", "fb.com"})
+		}
+	}
+	
+	// Instagram patterns
+	if strings.Contains(text, "instagram.com/") || strings.Contains(text, "instagr.am/") {
+		if e.Instagram == "" {
+			e.Instagram = extractURLFromText(text, []string{"instagram.com", "instagr.am"})
+		}
+	}
+	
+	// LinkedIn patterns
+	if strings.Contains(text, "linkedin.com/") {
+		if e.LinkedIn == "" {
+			e.LinkedIn = extractURLFromText(text, []string{"linkedin.com"})
+		}
+	}
+	
+	// Twitter patterns
+	if strings.Contains(text, "twitter.com/") || strings.Contains(text, "x.com/") {
+		if e.Twitter == "" {
+			e.Twitter = extractURLFromText(text, []string{"twitter.com", "x.com"})
+		}
+	}
+}
+
+// extractSocialMediaFromSection extracts social media links from JSON array sections
+func (e *Entry) extractSocialMediaFromSection(section []any) {
+	for _, item := range section {
+		if itemArray, ok := item.([]any); ok {
+			e.extractSocialMediaFromArray(itemArray)
+		}
+	}
+}
+
+// extractSocialMediaFromArray recursively searches for social media links in nested arrays
+func (e *Entry) extractSocialMediaFromArray(arr []any) {
+	for _, item := range arr {
+		switch v := item.(type) {
+		case string:
+			e.extractSocialMediaFromText(v)
+		case []any:
+			e.extractSocialMediaFromArray(v)
+		}
+	}
+}
+
+// extractURLFromText extracts a complete URL from text for given domains
+func extractURLFromText(text string, domains []string) string {
+	for _, domain := range domains {
+		if idx := strings.Index(text, domain); idx != -1 {
+			// Find the start of the URL (look for http:// or https://)
+			start := idx
+			for start > 0 && text[start-1] != ' ' && text[start-1] != '\n' && text[start-1] != '\t' {
+				start--
+				if start >= 8 && text[start:start+8] == "https://" {
+					break
+				}
+				if start >= 7 && text[start:start+7] == "http://" {
+					break
+				}
+			}
+			
+			// Find the end of the URL
+			end := idx + len(domain)
+			for end < len(text) && text[end] != ' ' && text[end] != '\n' && text[end] != '\t' && text[end] != '"' && text[end] != '\'' {
+				end++
+			}
+			
+			url := text[start:end]
+			// Ensure URL has protocol
+			if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+				url = "https://" + url
+			}
+			
+			return strings.TrimSpace(url)
+		}
+	}
+	return ""
+}
+
+// getCountryCode converts country name to ISO country code
+func getCountryCode(country string) string {
+	countryMap := map[string]string{
+		"united states":    "US",
+		"usa":             "US",
+		"america":         "US",
+		"canada":          "CA",
+		"united kingdom":  "GB",
+		"uk":              "GB",
+		"england":         "GB",
+		"australia":       "AU",
+		"germany":         "DE",
+		"deutschland":     "DE",
+		"france":          "FR",
+		"italy":           "IT",
+		"italia":          "IT",
+		"spain":           "ES",
+		"españa":          "ES",
+		"japan":           "JP",
+		"china":           "CN",
+		"india":           "IN",
+		"brazil":          "BR",
+		"brasil":          "BR",
+		"russia":          "RU",
+		"mexico":          "MX",
+		"netherlands":     "NL",
+		"holland":         "NL",
+		"sweden":          "SE",
+		"norway":          "NO",
+		"denmark":         "DK",
+		"finland":         "FI",
+		"poland":          "PL",
+		"indonesia":       "ID",
+		"thailand":        "TH",
+		"singapore":       "SG",
+		"malaysia":        "MY",
+		"philippines":     "PH",
+		"vietnam":         "VN",
+		"south korea":     "KR",
+		"korea":           "KR",
+		"new zealand":     "NZ",
+		"south africa":    "ZA",
+		"argentina":       "AR",
+		"chile":           "CL",
+		"colombia":        "CO",
+		"peru":            "PE",
+		"venezuela":       "VE",
+		"turkey":          "TR",
+		"türkiye":         "TR",
+		"israel":          "IL",
+		"saudi arabia":    "SA",
+		"uae":             "AE",
+		"united arab emirates": "AE",
+		"egypt":           "EG",
+		"nigeria":         "NG",
+		"kenya":           "KE",
+		"ghana":           "GH",
+		"morocco":         "MA",
+		"tunisia":         "TN",
+		"algeria":         "DZ",
+		"libya":           "LY",
+		"ethiopia":        "ET",
+		"uganda":          "UG",
+		"tanzania":        "TZ",
+		"zambia":          "ZM",
+		"zimbabwe":        "ZW",
+		"botswana":        "BW",
+		"namibia":         "NA",
+		"mozambique":      "MZ",
+		"madagascar":      "MG",
+		"mauritius":       "MU",
+		"seychelles":      "SC",
+		"reunion":         "RE",
+		"mayotte":         "YT",
+		"comoros":         "KM",
+	}
+	
+	countryLower := strings.ToLower(strings.TrimSpace(country))
+	if code, exists := countryMap[countryLower]; exists {
+		return code
+	}
+	
+	// If not found in map, return first 2 characters uppercase as fallback
+	if len(country) >= 2 {
+		return strings.ToUpper(country[:2])
+	}
+	
+	return ""
 }
 
 func parseReviews(reviewsI []any) []Review {

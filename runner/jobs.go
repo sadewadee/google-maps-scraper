@@ -9,6 +9,7 @@ import (
 	"plugin"
 	"strconv"
 	"strings"
+	"net/url"
 
 	"github.com/gosom/google-maps-scraper/deduper"
 	"github.com/gosom/google-maps-scraper/exiter"
@@ -86,14 +87,25 @@ func CreateSeedJobs(
 
 		var job scrapemate.IJob
 
-		if useCroxy {
-			// Create CroxyProxy job for the target URL
-			targetURL := fmt.Sprintf("https://www.google.com/maps/search/%s", query)
-			if geoCoordinates != "" && zoom > 0 {
-				targetURL = fmt.Sprintf("https://www.google.com/maps/search/%s/@%s,%dz", query, strings.ReplaceAll(geoCoordinates, " ", ""), zoom)
-			}
-			job = gmaps.NewCroxyProxyJob(id, targetURL)
-		} else if !fastmode {
+	if useCroxy {
+		// Create CroxyProxy job for the target URL
+		// IMPORTANT: ensure query is URL-encoded to avoid Croxy redirecting back to homepage
+		escapedQuery := url.QueryEscape(query)
+		// Always include hl parameter for language consistency
+		var targetURL string
+		if geoCoordinates != "" && zoom > 0 {
+			targetURL = fmt.Sprintf(
+				"https://www.google.com/maps/search/%s/@%s,%dz?hl=%s",
+				escapedQuery,
+				strings.ReplaceAll(geoCoordinates, " ", ""),
+				zoom,
+				langCode,
+			)
+		} else {
+			targetURL = fmt.Sprintf("https://www.google.com/maps/search/%s?hl=%s", escapedQuery, langCode)
+		}
+		job = gmaps.NewCroxyProxyJob(id, targetURL)
+	} else if !fastmode {
 			opts := []gmaps.GmapJobOptions{}
 
 			if dedup != nil {

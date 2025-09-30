@@ -181,21 +181,41 @@ func (j *PlaceJob) BrowserActions(ctx context.Context, page playwright.Page) scr
 }
 
 func (j *PlaceJob) extractJSON(page playwright.Page) ([]byte, error) {
-	rawI, err := page.Evaluate(js)
-	if err != nil {
-		return nil, err
-	}
+    return ExtractJSONFromPage(page)
+}
 
-	raw, ok := rawI.(string)
-	if !ok {
-		return nil, fmt.Errorf("could not convert to string")
-	}
+// ExtractJSONFromPage is a shared helper to extract the Google Maps initialization JSON
+// from a Place page using the same JS snippet as PlaceJob.
+func ExtractJSONFromPage(page playwright.Page) ([]byte, error) {
+    // Try main page context first
+    rawI, err := page.Evaluate(js)
+    if err == nil {
+        if raw, ok := rawI.(string); ok && strings.TrimSpace(raw) != "" {
+            const prefix = ")]}'"
+            raw = strings.TrimSpace(strings.TrimPrefix(raw, prefix))
+            return []byte(raw), nil
+        }
+    }
 
-	const prefix = `)]}'`
+    // Fallback: search through frames (CroxyProxy often renders Maps inside an iframe)
+    frames := page.Frames()
+    for _, f := range frames {
+        rawFI, errF := f.Evaluate(js)
+        if errF != nil {
+            continue
+        }
+        raw, ok := rawFI.(string)
+        if !ok || strings.TrimSpace(raw) == "" {
+            continue
+        }
+        const prefix = ")]}'"
+        raw = strings.TrimSpace(strings.TrimPrefix(raw, prefix))
+        if raw != "" {
+            return []byte(raw), nil
+        }
+    }
 
-	raw = strings.TrimSpace(strings.TrimPrefix(raw, prefix))
-
-	return []byte(raw), nil
+    return nil, fmt.Errorf("initialization JSON not found in page or frames")
 }
 
 func (j *PlaceJob) getReviewCount(data []byte) int {

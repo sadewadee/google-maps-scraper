@@ -1,0 +1,158 @@
+# Enterprise Configuration for 1M+ Data Point Scraping
+# This configuration is optimized for high-throughput, 24/7 operations
+
+# Scaling Parameters
+scaling:
+  max_concurrency: 100        # Maximum concurrent workers
+  batch_size: 1000           # Records per batch operation
+  worker_pool_size: 50       # Worker pool for job processing
+  auto_scale: true           # Enable automatic scaling
+  scale_threshold: 0.8       # CPU/Memory threshold for scaling
+
+# Memory Management
+memory:
+  max_usage: "4Gi"           # Maximum memory per instance
+  gc_interval: "30s"         # Garbage collection interval
+  buffer_size: "100MB"       # Buffer size for operations
+  pool_size: 1000           # Object pool size
+
+# Database Configuration
+database:
+  max_connections: 100       # Maximum database connections
+  connection_pool_size: 20   # Connection pool size
+  query_timeout: "30s"       # Query timeout
+  batch_insert_size: 1000    # Batch insert size
+  connection_lifetime: "1h"  # Connection lifetime
+  
+  # PostgreSQL specific optimizations
+  postgres:
+    shared_buffers: "2GB"
+    effective_cache_size: "6GB"
+    work_mem: "50MB"
+    maintenance_work_mem: "512MB"
+    max_connections: 1000
+
+# Error Handling & Resilience
+resilience:
+  max_retries: 5             # Maximum retry attempts
+  retry_backoff: "10s"       # Backoff between retries
+  circuit_breaker:
+    threshold: 10            # Failure threshold
+    timeout: "60s"           # Circuit breaker timeout
+    reset_timeout: "300s"    # Reset timeout
+  
+  # Health checks
+  health_check:
+    interval: "10s"          # Health check interval
+    timeout: "5s"            # Health check timeout
+    failure_threshold: 3     # Failures before unhealthy
+
+# Performance Optimization
+performance:
+  # Concurrency settings
+  max_idle_conns: 50         # Maximum idle connections
+  max_open_conns: 100        # Maximum open connections
+  conn_max_lifetime: "1h"    # Connection maximum lifetime
+  
+  # Caching
+  cache:
+    enabled: true
+    type: "redis"            # Cache type (redis/memory)
+    ttl: "1h"               # Cache TTL
+    max_size: "1GB"         # Maximum cache size
+  
+  # Rate limiting
+  rate_limit:
+    requests_per_second: 1000
+    burst_size: 2000
+    
+# Monitoring & Observability
+monitoring:
+  enabled: true
+  metrics_port: 9090         # Prometheus metrics port
+  health_port: 8080          # Health check port
+  
+  # Metrics collection
+  metrics:
+    - "jobs_per_minute"
+    - "success_rate"
+    - "error_rate"
+    - "memory_usage"
+    - "cpu_utilization"
+    - "database_connections"
+    - "response_time"
+  
+  # Logging
+  logging:
+    level: "info"            # Log level (debug/info/warn/error)
+    format: "json"           # Log format
+    output: "stdout"         # Log output
+    
+# 24/7 Operations
+operations:
+  auto_restart: true         # Auto-restart on failure
+  graceful_shutdown: "30s"   # Graceful shutdown timeout
+  
+  # Maintenance window
+  maintenance:
+    enabled: true
+    window: "02:00-04:00"    # UTC maintenance window
+    max_duration: "2h"       # Maximum maintenance duration
+  
+  # Backup configuration
+  backup:
+    enabled: true
+    interval: "6h"           # Backup interval
+    retention: "7d"          # Backup retention
+    
+# Security
+security:
+  # API security
+  api:
+    rate_limit: true
+    cors_enabled: true
+    allowed_origins: ["*"]
+    
+  # Database security
+  database:
+    ssl_mode: "require"
+    ssl_cert: "/etc/ssl/certs/client-cert.pem"
+    ssl_key: "/etc/ssl/private/client-key.pem"
+    ssl_ca: "/etc/ssl/certs/ca-cert.pem"
+
+# Resource Limits (Kubernetes)
+resources:
+  requests:
+    memory: "2Gi"
+    cpu: "1000m"
+  limits:
+    memory: "4Gi"
+    cpu: "2000m"
+
+# Environment-specific overrides
+environments:
+  development:
+    scaling:
+      max_concurrency: 10
+      batch_size: 100
+    monitoring:
+      enabled: false
+      
+  staging:
+    scaling:
+      max_concurrency: 50
+      batch_size: 500
+    monitoring:
+      enabled: true
+      
+  production:
+    scaling:
+      max_concurrency: 100
+      batch_size: 1000
+    monitoring:
+      enabled: true
+    security:
+      api:
+        rate_limit: true
+      database:
+        ssl_mode: "require"

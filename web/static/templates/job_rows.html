@@ -8,7 +8,12 @@
     </td>
     <td>
         {{ if eq .Status "ok" }}
-            <a href="/download?id={{.ID}}" download class="button download-button">Download</a>
+            {{ if .Data.UseCroxy }}
+                <a href="/download?id={{.ID}}" download class="button download-button">Download JSON</a>
+                <a href="/download-metadata-csv?id={{.ID}}" download class="button download-button">Download Metadata CSV</a>
+            {{ else }}
+                <a href="/download?id={{.ID}}" download class="button download-button">Download CSV</a>
+            {{ end }}
         {{ end }}
         <button hx-delete="/delete?id={{.ID}}" 
                 hx-target="closest tr"

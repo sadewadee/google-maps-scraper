@@ -264,26 +264,40 @@ func waitUntilURLContains(ctx context.Context, page playwright.Page, s string) b
 }
 
 func clickRejectCookiesIfRequired(page playwright.Page) error {
-	// click the cookie reject button if exists
-	sel := `form[action="https://consent.google.com/save"]:first-of-type button:first-of-type`
+    // Try clicking the cookie reject button if present.
+    // Broaden selector to handle Croxy rewriting and locale differences.
+    selectors := []string{
+        `form[action*="consent.google.com/save"]:first-of-type button:first-of-type`,
+        `form[action*="consent.google.com"] button`,
+    }
 
-	const timeout = 500
+    const timeout = 1200
 
-	//nolint:staticcheck // TODO replace with the new playwright API
-	el, err := page.WaitForSelector(sel, playwright.PageWaitForSelectorOptions{
-		Timeout: playwright.Float(timeout),
-	})
+    // Try in the main page context first
+    for _, sel := range selectors {
+        el, err := page.WaitForSelector(sel, playwright.PageWaitForSelectorOptions{
+            Timeout: playwright.Float(timeout),
+        })
+        if err == nil && el != nil {
+            _ = el.Click()
+            return nil
+        }
+    }
 
-	if err != nil {
-		return nil
-	}
+    // Fallback: search all frames (Croxy often nests Google in iframes)
+    for _, f := range page.Frames() {
+        for _, sel := range selectors {
+            el, err := f.WaitForSelector(sel, playwright.FrameWaitForSelectorOptions{
+                Timeout: playwright.Float(timeout),
+            })
+            if err == nil && el != nil {
+                _ = el.Click()
+                return nil
+            }
+        }
+    }
 
-	if el == nil {
-		return nil
-	}
-
-	//nolint:staticcheck // TODO replace with the new playwright API
-	return el.Click()
+    return nil
 }
 
 func scroll(ctx context.Context,

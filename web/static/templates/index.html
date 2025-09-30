@@ -107,8 +107,8 @@
                                 <label for="usecroxy">Use CroxyProxy (fallback for blocked requests)</label>
                             </div>
                             <div class="form-group">
-                                <label for="maxtime">Max job time:</label>
-                                <input type="text" id="maxtime" name="maxtime" value="{{.MaxTime}}">
+                                <label for="maxtime">Max time per query:</label>
+                                <input type="text" id="maxtime" name="maxtime" value="{{.MaxTime}}" placeholder="e.g., 5m (total time divided by number of keywords)">
                             </div>
                         </fieldset>
                     </details>

@@ -194,6 +194,7 @@ components:
           type: boolean
         max_time:
           type: integer
+          description: "Maximum time per query in seconds (total time divided by number of keywords)"
         proxies:
           type: array
           items:
