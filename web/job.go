@@ -26,6 +26,7 @@ type JobRepository interface {
 	Delete(context.Context, string) error
 	Select(context.Context, SelectParams) ([]Job, error)
 	Update(context.Context, *Job) error
+	Stats(context.Context) (ServiceStats, error)
 }
 
 type Job struct {
@@ -72,6 +73,14 @@ type JobData struct {
 	Email    bool          `json:"email"`
 	MaxTime  time.Duration `json:"max_time"`
 	Proxies  []string      `json:"proxies"`
+}
+
+// ServiceStats represents aggregate statistics for the dashboard API.
+type ServiceStats struct {
+	Total        int       `json:"total"`
+	Completed    int       `json:"completed"`
+	JobsPerMin   float64   `json:"jobs_per_min"`
+	LastActivity time.Time `json:"last_activity"`
 }
 
 func (d *JobData) Validate() error {

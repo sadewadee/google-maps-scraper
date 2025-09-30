@@ -217,3 +217,38 @@ func createSchema(db *sql.DB) error {
 
 	return err
 }
+
+func (repo *repo) Stats(ctx context.Context) (web.ServiceStats, error) {
+	var stats web.ServiceStats
+
+	// Total jobs
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs`).Scan(&stats.Total); err != nil {
+		return stats, err
+	}
+
+	// Completed jobs
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE status = ?`, web.StatusOK).Scan(&stats.Completed); err != nil {
+		return stats, err
+	}
+
+	// Last activity (max updated_at)
+	var maxUpdated sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, `SELECT MAX(updated_at) FROM jobs`).Scan(&maxUpdated); err != nil {
+		return stats, err
+	}
+	if maxUpdated.Valid {
+		stats.LastActivity = time.Unix(maxUpdated.Int64, 0).UTC()
+	}
+
+	// Rolling jobs/min over last 10 minutes
+	cutoff := time.Now().UTC().Add(-10 * time.Minute).Unix()
+	var recentCompleted int
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE status = ? AND updated_at >= ?`, web.StatusOK, cutoff).Scan(&recentCompleted); err != nil {
+		return stats, err
+	}
+	stats.JobsPerMin = float64(recentCompleted) / 10.0
+
+	return stats, nil
+}
+
+/* duplicate Stats removed */

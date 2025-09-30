@@ -355,3 +355,339 @@ nav a:hover {
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
+
+/* Modern single-column layout overrides */
+.single-column {
+    display: block;
+    padding: 24px 32px;
+    background-color: var(--color-background);
+}
+
+.single-column section {
+    margin-bottom: 24px;
+}
+
+/* Dashboard cards */
+.dashboard .stats-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.stat-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+
+.stat-title {
+    font-size: 13px;
+    color: var(--color-text-light);
+    margin-bottom: 8px;
+}
+
+.stat-value {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--color-primary);
+}
+
+/* Job card grid */
+.job-card-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+@media (max-width: 1024px) {
+    .job-card-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .job-card-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Job card styles */
+.job-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.job-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-primary);
+    word-break: break-word;
+}
+
+.card-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--color-text-light);
+}
+
+.card-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    background-color: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+
+.card-date {
+    color: var(--color-text-light);
+}
+
+.card-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+/* Button base */
+.button, .download-button, .delete-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+    will-change: transform;
+}
+
+.button:hover, .download-button:hover, .delete-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+}
+
+/* Muted status badges */
+.status-indicator {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--color-border);
+    background-color: var(--color-background);
+    color: var(--color-text);
+}
+
+.status-ok {
+    background-color: rgba(67, 160, 71, 0.12); /* muted success */
+    border-color: rgba(67,160,71,0.28);
+    color: #2e7d32;
+}
+
+.status-pending,
+.status-working {
+    background-color: rgba(253, 216, 53, 0.18); /* muted warning */
+    border-color: rgba(253,216,53,0.35);
+    color: #6b5e2e;
+}
+
+.status-failed,
+.status-error {
+    background-color: rgba(229, 57, 53, 0.12); /* muted error */
+    border-color: rgba(229,57,53,0.28);
+    color: #b71c1c;
+}
+
+/* Download/Delete variants with subtle accents */
+.download-button {
+    background-color: rgba(67,160,71,0.10);
+    color: #2e7d32;
+    border-color: rgba(67,160,71,0.28);
+}
+
+.download-button:hover {
+    background-color: rgba(67,160,71,0.18);
+    border-color: rgba(67,160,71,0.38);
+}
+
+.delete-button {
+    background-color: rgba(229,57,53,0.10);
+    color: #b71c1c;
+    border-color: rgba(229,57,53,0.28);
+}
+
+.delete-button:hover {
+    background-color: rgba(229,57,53,0.18);
+    border-color: rgba(229,57,53,0.38);
+}
+
+/* New Job section spacing */
+.new-job form {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+/* Remove two-column legacy (override) */
+main {
+    display: block;
+    overflow: visible;
+}
+
+.sidebar, .content, table#job-table {
+    display: none;
+}
+
+/* Topbar and jobs toolbar */
+.topbar {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.jobs-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+/* Modal styles */
+.modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    z-index: 1000;
+}
+
+.modal.open {
+    display: block;
+    overflow: auto;
+}
+
+.modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: saturate(120%) blur(1px);
+}
+
+.modal-content {
+    position: relative;
+    width: 96%;
+    max-width: 720px;
+    margin: 6vh auto 0;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.20);
+    padding: 16px 20px;
+    animation: modalIn 120ms ease-out;
+}
+
+@keyframes modalIn {
+    0% { transform: translateY(8px); opacity: 0; }
+    100% { transform: translateY(0px); opacity: 1; }
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.modal-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--color-primary);
+}
+
+.modal-close {
+    border: none;
+    background: transparent;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--color-text-light);
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 4px 8px;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.modal-close:hover {
+    background-color: var(--color-background);
+    color: var(--color-text);
+}
+
+.modal-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* Minimal form tweaks inside modal */
+.modal-content form fieldset {
+    margin: 0;
+}
+
+.modal-content .form-group {
+    margin-bottom: 12px;
+}
+
+.modal-content input[type="text"],
+.modal-content input[type="number"],
+.modal-content textarea {
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 6px;
+}
+
+.modal-content button[type="submit"] {
+    padding: 10px 14px;
+    font-size: 13px;
+    border-radius: 8px;
+}

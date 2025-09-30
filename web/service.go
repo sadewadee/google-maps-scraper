@@ -74,3 +74,7 @@ func (s *Service) GetCSV(_ context.Context, id string) (string, error) {
 
 	return datapath, nil
 }
+
+func (s *Service) Stats(ctx context.Context) (ServiceStats, error) {
+	return s.repo.Stats(ctx)
+}

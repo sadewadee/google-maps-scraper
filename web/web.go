@@ -67,6 +67,8 @@ func New(svc *Service, addr string) (*Server, error) {
 
 	// api routes
 	mux.HandleFunc("/api/docs", ans.redocHandler)
+	// stats endpoint for dashboard
+	mux.HandleFunc("/api/v1/stats", ans.apiStats)
 	mux.HandleFunc("/api/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -636,4 +638,40 @@ func securityHeaders(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) apiStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		ans := apiError{
+			Code:    http.StatusMethodNotAllowed,
+			Message: "Method not allowed",
+		}
+		renderJSON(w, http.StatusMethodNotAllowed, ans)
+		return
+	}
+
+	stats, err := s.svc.Stats(r.Context())
+	if err != nil {
+		ans := apiError{
+			Code:    http.StatusInternalServerError,
+			Message: err.Error(),
+		}
+		renderJSON(w, http.StatusInternalServerError, ans)
+		return
+	}
+
+	// Return a compact payload for dashboard cards
+	payload := map[string]any{
+		"total":        stats.Total,
+		"completed":    stats.Completed,
+		"jobs_per_min": stats.JobsPerMin,
+		"last_activity": func() string {
+			if stats.LastActivity.IsZero() {
+				return "—"
+			}
+			return stats.LastActivity.Format("Jan 02, 2006 15:04:05")
+		}(),
+	}
+
+	renderJSON(w, http.StatusOK, payload)
 }
