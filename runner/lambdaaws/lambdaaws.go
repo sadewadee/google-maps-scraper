@@ -15,11 +15,11 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 
-	"github.com/sadewadee/google-maps-scraper/exiter"
-	"github.com/sadewadee/google-maps-scraper/runner"
 	"github.com/gosom/scrapemate"
 	"github.com/gosom/scrapemate/adapters/writers/csvwriter"
 	"github.com/gosom/scrapemate/scrapemateapp"
+	"github.com/sadewadee/google-maps-scraper/exiter"
+	"github.com/sadewadee/google-maps-scraper/runner"
 )
 
 var _ runner.Runner = (*lambdaAwsRunner)(nil)
@@ -90,6 +90,12 @@ func (l *lambdaAwsRunner) handler(ctx context.Context, input lInput) error {
 		nil,
 		exitMonitor,
 		input.ExtraReviews,
+		// Preflight settings for Lambda runner (relaxed defaults)
+		true,  // enable preflight
+		1000,  // DNS timeout ms
+		2000,  // TCP timeout ms
+		0,     // HEAD timeout ms (0 keeps disabled)
+		false, // Enable HEAD
 	)
 	if err != nil {
 		return err

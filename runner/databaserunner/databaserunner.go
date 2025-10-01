@@ -10,11 +10,11 @@ import (
 	// postgres driver
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/gosom/scrapemate"
+	"github.com/gosom/scrapemate/scrapemateapp"
 	"github.com/sadewadee/google-maps-scraper/postgres"
 	"github.com/sadewadee/google-maps-scraper/runner"
 	"github.com/sadewadee/google-maps-scraper/tlmt"
-	"github.com/gosom/scrapemate"
-	"github.com/gosom/scrapemate/scrapemateapp"
 )
 
 type dbrunner struct {
@@ -152,6 +152,12 @@ func (d *dbrunner) produceSeedJobs(ctx context.Context) error {
 		nil,
 		nil,
 		d.cfg.ExtraReviews,
+		// Preflight settings for database runner production (relaxed defaults)
+		true,  // enable preflight
+		1000,  // DNS timeout ms
+		2000,  // TCP timeout ms
+		0,     // HEAD timeout ms (0 keeps disabled)
+		false, // enable HEAD
 	)
 	if err != nil {
 		return err

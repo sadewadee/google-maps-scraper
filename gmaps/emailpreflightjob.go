@@ -142,8 +142,8 @@ func (j *EmailPreflightJob) Process(ctx context.Context, _ *scrapemate.Response)
 	log := scrapemate.GetLoggerFromContext(ctx)
 
 	defer func() {
-		if j.ExitMonitor != nil {
-			// preflight completes a place path regardless of outcome
+		if j.ExitMonitor != nil && j.useInResults {
+			// increment completion only when short-circuit finalization occurs
 			j.ExitMonitor.IncrPlacesCompleted(1)
 		}
 	}()

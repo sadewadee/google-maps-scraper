@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gosom/scrapemate"
 	"github.com/sadewadee/google-maps-scraper/deduper"
 	"github.com/sadewadee/google-maps-scraper/exiter"
 	"github.com/sadewadee/google-maps-scraper/gmaps"
-	"github.com/gosom/scrapemate"
 )
 
 func CreateSeedJobs(
@@ -28,6 +28,12 @@ func CreateSeedJobs(
 	dedup deduper.Deduper,
 	exitMonitor exiter.Exiter,
 	extraReviews bool,
+	// Preflight controls (propagated into Gmap/Place pipeline)
+	preflightEnabled bool,
+	preflightDNSTimeoutMs int,
+	preflightTCPTimeoutMs int,
+	preflightHEADTimeoutMs int,
+	preflightEnableHEAD bool,
 ) (jobs []scrapemate.IJob, err error) {
 	var lat, lon float64
 
@@ -100,6 +106,10 @@ func CreateSeedJobs(
 				opts = append(opts, gmaps.WithExtraReviews())
 			}
 
+			// Propagate preflight settings from web job data into Gmap/Place pipeline
+			opts = append(opts, gmaps.WithPreflightEnabled(preflightEnabled))
+			opts = append(opts, gmaps.WithPreflightConfig(preflightDNSTimeoutMs, preflightTCPTimeoutMs, preflightHEADTimeoutMs, preflightEnableHEAD))
+
 			job = gmaps.NewGmapJob(id, langCode, query, maxDepth, email, geoCoordinates, zoom, opts...)
 		} else {
 			jparams := gmaps.MapSearchParams{
@@ -123,6 +133,8 @@ func CreateSeedJobs(
 			if dedup != nil {
 				opts = append(opts, gmaps.WithSearchJobDeduper(dedup))
 			}
+			// propagate preflight config into SearchJob so browser fallbacks carry it downstream
+			opts = append(opts, gmaps.WithSearchJobPreflight(preflightEnabled, preflightDNSTimeoutMs, preflightTCPTimeoutMs, preflightHEADTimeoutMs, preflightEnableHEAD))
 
 			job = gmaps.NewSearchJob(&jparams, opts...)
 		}
@@ -185,6 +197,12 @@ func CreateTiledSeedJobs(
 	radius float64,
 	dedup deduper.Deduper,
 	exitMonitor exiter.Exiter,
+	// Preflight controls for browser fallback pipeline
+	preflightEnabled bool,
+	preflightDNSTimeoutMs int,
+	preflightTCPTimeoutMs int,
+	preflightHEADTimeoutMs int,
+	preflightEnableHEAD bool,
 ) (jobs []scrapemate.IJob, err error) {
 	// Parse bbox coordinates
 	minLat, err := strconv.ParseFloat(strings.TrimSpace(bboxMinLat), 64)
@@ -278,6 +296,8 @@ func CreateTiledSeedJobs(
 				if dedup != nil {
 					opts = append(opts, gmaps.WithSearchJobDeduper(dedup))
 				}
+				// Propagate preflight config into SearchJob so its browser fallback can carry it into Gmap/Place pipeline
+				opts = append(opts, gmaps.WithSearchJobPreflight(preflightEnabled, preflightDNSTimeoutMs, preflightTCPTimeoutMs, preflightHEADTimeoutMs, preflightEnableHEAD))
 
 				jobs = append(jobs, gmaps.NewSearchJob(params, opts...))
 

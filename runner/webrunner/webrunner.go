@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosom/scrapemate"
+	"github.com/gosom/scrapemate/scrapemateapp"
 	"github.com/sadewadee/google-maps-scraper/deduper"
 	"github.com/sadewadee/google-maps-scraper/exiter"
 	"github.com/sadewadee/google-maps-scraper/runner"
 	"github.com/sadewadee/google-maps-scraper/tlmt"
 	"github.com/sadewadee/google-maps-scraper/web"
 	"github.com/sadewadee/google-maps-scraper/web/sqlite"
-	"github.com/gosom/scrapemate"
-	"github.com/gosom/scrapemate/adapters/writers/csvwriter"
-	"github.com/gosom/scrapemate/scrapemateapp"
+	"github.com/sadewadee/google-maps-scraper/writers/csvrows"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -249,6 +249,12 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 			rad,
 			w.dedup,
 			exitMonitor,
+			// propagate preflight settings from web job data
+			job.Data.EnablePreflight,
+			job.Data.PreflightDNSTimeoutMs,
+			job.Data.PreflightTCPTimeoutMs,
+			job.Data.PreflightHEADTimeoutMs,
+			job.Data.PreflightEnableHEAD,
 		)
 	} else {
 		seedJobs, err = runner.CreateSeedJobs(
@@ -269,6 +275,12 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 			w.dedup,
 			exitMonitor,
 			w.cfg.ExtraReviews,
+			// propagate preflight settings from web job data
+			job.Data.EnablePreflight,
+			job.Data.PreflightDNSTimeoutMs,
+			job.Data.PreflightTCPTimeoutMs,
+			job.Data.PreflightHEADTimeoutMs,
+			job.Data.PreflightEnableHEAD,
 		)
 	}
 	if err != nil {
@@ -362,9 +374,9 @@ func (w *webrunner) setupMate(_ context.Context, writer io.Writer, job *web.Job)
 
 	log.Printf("job %s has proxy: %v", job.ID, hasProxy)
 
-	csvWriter := csvwriter.NewCsvWriter(csv.NewWriter(writer))
+	csvRowsWriter := csvrows.New(csv.NewWriter(writer))
 
-	writers := []scrapemate.ResultWriter{csvWriter}
+	writers := []scrapemate.ResultWriter{csvRowsWriter}
 
 	matecfg, err := scrapemateapp.NewConfig(
 		writers,

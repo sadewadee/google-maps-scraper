@@ -47,6 +47,13 @@ type SearchJob struct {
 	ExitMonitor  exiter.Exiter
 	Deduper      deduper.Deduper
 	useInResults bool
+
+	// Preflight config to propagate into browser fallback pipeline
+	preflightEnabled       bool
+	preflightDNSTimeoutMs  int
+	preflightTCPTimeoutMs  int
+	preflightHEADTimeoutMs int
+	preflightEnableHEAD    bool
 }
 
 func NewSearchJob(params *MapSearchParams, opts ...SearchJobOptions) *SearchJob {
@@ -89,6 +96,17 @@ func WithSearchJobDeduper(d deduper.Deduper) SearchJobOptions {
 	}
 }
 
+// WithSearchJobPreflight configures preflight propagation for any browser fallback (Gmap/Place pipeline).
+func WithSearchJobPreflight(enabled bool, dnsMs, tcpMs, headMs int, enableHEAD bool) SearchJobOptions {
+	return func(j *SearchJob) {
+		j.preflightEnabled = enabled
+		j.preflightDNSTimeoutMs = dnsMs
+		j.preflightTCPTimeoutMs = tcpMs
+		j.preflightHEADTimeoutMs = headMs
+		j.preflightEnableHEAD = enableHEAD
+	}
+}
+
 func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any, []scrapemate.IJob, error) {
 	defer func() {
 		resp.Document = nil
@@ -113,6 +131,9 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 		if j.Deduper != nil {
 			gopts = append(gopts, WithDeduper(j.Deduper))
 		}
+		// propagate preflight config into Place pipeline
+		gopts = append(gopts, WithPreflightEnabled(j.preflightEnabled))
+		gopts = append(gopts, WithPreflightConfig(j.preflightDNSTimeoutMs, j.preflightTCPTimeoutMs, j.preflightHEADTimeoutMs, j.preflightEnableHEAD))
 
 		fallbackDepth := 10
 		fallbackEmail := false
@@ -156,6 +177,9 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 		if j.Deduper != nil {
 			gopts = append(gopts, WithDeduper(j.Deduper))
 		}
+		// propagate preflight config into Place pipeline
+		gopts = append(gopts, WithPreflightEnabled(j.preflightEnabled))
+		gopts = append(gopts, WithPreflightConfig(j.preflightDNSTimeoutMs, j.preflightTCPTimeoutMs, j.preflightHEADTimeoutMs, j.preflightEnableHEAD))
 
 		fallbackDepth := 10
 		fallbackEmail := false
@@ -198,6 +222,9 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 		if j.Deduper != nil {
 			gopts = append(gopts, WithDeduper(j.Deduper))
 		}
+		// propagate preflight config into Place pipeline
+		gopts = append(gopts, WithPreflightEnabled(j.preflightEnabled))
+		gopts = append(gopts, WithPreflightConfig(j.preflightDNSTimeoutMs, j.preflightTCPTimeoutMs, j.preflightHEADTimeoutMs, j.preflightEnableHEAD))
 
 		fallbackDepth := 10
 		fallbackEmail := false
@@ -238,6 +265,9 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 		if j.Deduper != nil {
 			gopts = append(gopts, WithDeduper(j.Deduper))
 		}
+		// propagate preflight config into Place pipeline
+		gopts = append(gopts, WithPreflightEnabled(j.preflightEnabled))
+		gopts = append(gopts, WithPreflightConfig(j.preflightDNSTimeoutMs, j.preflightTCPTimeoutMs, j.preflightHEADTimeoutMs, j.preflightEnableHEAD))
 
 		fallbackDepth := 10
 		fallbackEmail := false
@@ -328,6 +358,9 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 			if j.ExitMonitor != nil {
 				opts = append(opts, WithSearchJobExitMonitor(j.ExitMonitor))
 			}
+			// propagate preflight config to child search jobs
+			opts = append(opts, WithSearchJobPreflight(j.preflightEnabled, j.preflightDNSTimeoutMs, j.preflightTCPTimeoutMs, j.preflightHEADTimeoutMs, j.preflightEnableHEAD))
+
 			next = append(next, NewSearchJob(p, opts...))
 		}
 

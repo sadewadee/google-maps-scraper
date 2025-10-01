@@ -29,21 +29,29 @@ func (r *resultWriter) Run(ctx context.Context, in <-chan scrapemate.Result) err
 	lastSave := time.Now().UTC()
 
 	for result := range in {
-		entry, ok := result.Data.(*gmaps.Entry)
-
-		if !ok {
+		switch data := result.Data.(type) {
+		case *gmaps.Entry:
+			if data != nil {
+				buff = append(buff, data)
+			}
+		case []*gmaps.Entry:
+			for _, e := range data {
+				if e != nil {
+					buff = append(buff, e)
+				}
+			}
+		default:
 			return errors.New("invalid data type")
 		}
 
-		buff = append(buff, entry)
-
-		if len(buff) >= maxBatchSize || time.Now().UTC().Sub(lastSave) >= time.Minute {
+		if len(buff) >= maxBatchSize || time.Since(lastSave) >= time.Minute {
 			err := r.batchSave(ctx, buff)
 			if err != nil {
 				return err
 			}
 
 			buff = buff[:0]
+			lastSave = time.Now().UTC()
 		}
 	}
 

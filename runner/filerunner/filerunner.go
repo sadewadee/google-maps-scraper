@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosom/scrapemate"
+	"github.com/gosom/scrapemate/adapters/writers/jsonwriter"
+	"github.com/gosom/scrapemate/scrapemateapp"
 	"github.com/sadewadee/google-maps-scraper/deduper"
 	"github.com/sadewadee/google-maps-scraper/exiter"
 	"github.com/sadewadee/google-maps-scraper/runner"
 	"github.com/sadewadee/google-maps-scraper/tlmt"
-	"github.com/gosom/scrapemate"
-	"github.com/gosom/scrapemate/adapters/writers/csvwriter"
-	"github.com/gosom/scrapemate/adapters/writers/jsonwriter"
-	"github.com/gosom/scrapemate/scrapemateapp"
+	"github.com/sadewadee/google-maps-scraper/writers/csvrows"
 )
 
 type fileRunner struct {
@@ -87,6 +87,12 @@ func (r *fileRunner) Run(ctx context.Context) (err error) {
 		dedup,
 		exitMonitor,
 		r.cfg.ExtraReviews,
+		// Preflight settings for file runner (relaxed)
+		true,  // enable preflight
+		1000,  // DNS ms
+		2000,  // TCP ms
+		0,     // HEAD ms (0 → keep disabled)
+		false, // EnableHEAD
 	)
 	if err != nil {
 		return err
@@ -172,12 +178,12 @@ func (r *fileRunner) setWriters() error {
 			resultsWriter = r.outfile
 		}
 
-		csvWriter := csvwriter.NewCsvWriter(csv.NewWriter(resultsWriter))
+		csvRowsWriter := csvrows.New(csv.NewWriter(resultsWriter))
 
 		if r.cfg.JSON {
 			r.writers = append(r.writers, jsonwriter.NewJSONWriter(resultsWriter))
 		} else {
-			r.writers = append(r.writers, csvWriter)
+			r.writers = append(r.writers, csvRowsWriter)
 		}
 	}
 
