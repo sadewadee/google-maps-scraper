@@ -197,7 +197,6 @@ func CreateTiledSeedJobs(
 	radius float64,
 	dedup deduper.Deduper,
 	exitMonitor exiter.Exiter,
-	// Preflight controls for browser fallback pipeline
 	preflightEnabled bool,
 	preflightDNSTimeoutMs int,
 	preflightTCPTimeoutMs int,
