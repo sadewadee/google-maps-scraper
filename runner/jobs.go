@@ -71,13 +71,45 @@ func CreateSeedJobs(
 	scanner := bufio.NewScanner(r)
 
 	for scanner.Scan() {
-		query := strings.TrimSpace(scanner.Text())
-		if query == "" {
+		rawLine := scanner.Text()
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
 			continue
 		}
 
-		var id string
+		// Support per-line metadata: "query || geo=lat,lon || zoom=14"
+		// This avoids typing -geo per run when handling many cities.
+		parts := strings.Split(line, "||")
+		query := strings.TrimSpace(parts[0])
 
+		// Default to global CLI values unless overridden per-line
+		perGeoCoordinates := geoCoordinates
+		perZoomValue := zoom
+
+		if len(parts) > 1 {
+			for _, meta := range parts[1:] {
+				meta = strings.TrimSpace(meta)
+				if meta == "" {
+					continue
+				}
+				if kvKey, kvVal, ok := strings.Cut(meta, "="); ok {
+					key := strings.ToLower(strings.TrimSpace(kvKey))
+					val := strings.TrimSpace(kvVal)
+					switch key {
+					case "geo":
+						// expecting "lat,lon"
+						perGeoCoordinates = val
+					case "zoom":
+						if z, err := strconv.Atoi(val); err == nil {
+							perZoomValue = z
+						}
+					}
+				}
+			}
+		}
+
+		// Optional per-line ID suffix using "#!#"
+		var id string
 		if before, after, ok := strings.Cut(query, "#!#"); ok {
 			query = strings.TrimSpace(before)
 			id = strings.TrimSpace(after)
@@ -100,7 +132,7 @@ func CreateSeedJobs(
 				opts = append(opts, gmaps.WithExtraReviews())
 			}
 
-			job = gmaps.NewGmapJob(id, langCode, query, maxDepth, email, geoCoordinates, zoom, opts...)
+			job = gmaps.NewGmapJob(id, langCode, query, maxDepth, email, perGeoCoordinates, perZoomValue, opts...)
 		} else {
 			jparams := gmaps.MapSearchParams{
 				Location: gmaps.MapLocation{
@@ -109,10 +141,13 @@ func CreateSeedJobs(
 					ZoomLvl: float64(zoom),
 					Radius:  radius,
 				},
-				Query:     query,
-				ViewportW: 1920,
-				ViewportH: 450,
-				Hl:        langCode,
+				Query:            query,
+				ViewportW:        1920,
+				ViewportH:        450,
+				Hl:               langCode,
+				MaxDepthFallback: maxDepth,
+				Email:            email,
+				ExtraReviews:     extraReviews,
 			}
 
 			opts := []gmaps.SearchJobOptions{}

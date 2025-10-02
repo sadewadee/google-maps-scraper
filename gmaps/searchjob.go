@@ -30,6 +30,11 @@ type MapSearchParams struct {
 	ViewportH int
 	Hl        string
 
+	// Runtime fallbacks (no tiling)
+	MaxDepthFallback int  // browser scroll depth to use on static fallback
+	Email            bool // extract emails on place jobs created via fallback
+	ExtraReviews     bool // collect extended reviews on place jobs via fallback
+
 	// Adaptive tiling controls
 	SplitThreshold int // threshold to trigger subdivision
 	MinZoom        int // starting zoom
@@ -111,9 +116,15 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 		if j.Deduper != nil {
 			gopts = append(gopts, WithDeduper(j.Deduper))
 		}
+		if j.params.ExtraReviews {
+			gopts = append(gopts, WithExtraReviews())
+		}
 
-		fallbackDepth := 10
-		fallbackEmail := false
+		fallbackDepth := j.params.MaxDepthFallback
+		if fallbackDepth <= 0 {
+			fallbackDepth = 10
+		}
+		fallbackEmail := j.params.Email
 
 		next = append(next, NewGmapJob(
 			"",
@@ -153,9 +164,15 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 		if j.Deduper != nil {
 			gopts = append(gopts, WithDeduper(j.Deduper))
 		}
+		if j.params.ExtraReviews {
+			gopts = append(gopts, WithExtraReviews())
+		}
 
-		fallbackDepth := 10
-		fallbackEmail := false
+		fallbackDepth := j.params.MaxDepthFallback
+		if fallbackDepth <= 0 {
+			fallbackDepth = 10
+		}
+		fallbackEmail := j.params.Email
 
 		next = append(next, NewGmapJob(
 			"",
@@ -194,9 +211,15 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 		if j.Deduper != nil {
 			gopts = append(gopts, WithDeduper(j.Deduper))
 		}
+		if j.params.ExtraReviews {
+			gopts = append(gopts, WithExtraReviews())
+		}
 
-		fallbackDepth := 10
-		fallbackEmail := false
+		fallbackDepth := j.params.MaxDepthFallback
+		if fallbackDepth <= 0 {
+			fallbackDepth = 10
+		}
+		fallbackEmail := j.params.Email
 
 		next = append(next, NewGmapJob(
 			"",
@@ -233,9 +256,15 @@ func (j *SearchJob) Process(ctx context.Context, resp *scrapemate.Response) (any
 		if j.Deduper != nil {
 			gopts = append(gopts, WithDeduper(j.Deduper))
 		}
+		if j.params.ExtraReviews {
+			gopts = append(gopts, WithExtraReviews())
+		}
 
-		fallbackDepth := 10
-		fallbackEmail := false
+		fallbackDepth := j.params.MaxDepthFallback
+		if fallbackDepth <= 0 {
+			fallbackDepth = 10
+		}
+		fallbackEmail := j.params.Email
 
 		next = append(next, NewGmapJob(
 			"",

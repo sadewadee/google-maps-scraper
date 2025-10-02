@@ -9,6 +9,16 @@
       "env": {
         "DEFAULT_MINIMUM_TOKENS": "6000"
       }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.38",
+        "--browser=",
+        "--headless=",
+        "--viewport-size="
+      ]
     }
   }
 }
