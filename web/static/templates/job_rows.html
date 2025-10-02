@@ -12,6 +12,7 @@
     </div>
     <div class="card-actions">
         {{ if eq .Status "ok" }}
+            <a href="/view?id={{.ID}}" class="button">View</a>
             <a href="/download?id={{.ID}}" download class="button download-button">Download</a>
         {{ end }}
         <button hx-delete="/delete?id={{.ID}}"

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Viewer · {{if .Name}}{{.Name}}{{else}}Job {{.ID}}{{end}}</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.6/htmx.min.js"></script>
+    <style>
+    .csv-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0;}
+    .csv-toolbar .grow{flex:1;}
+    .csv-toolbar input[type="text"]{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;}
+    .csv-toolbar select{padding:8px 10px;border:1px solid #ddd;border-radius:6px;}
+    .csv-stats{margin-left:auto;color:#555;font-size:12px}
+    .csv-table-container{overflow:auto;border:1px solid #ddd;border-radius:6px;max-height:70vh;background:#fff}
+    table.csv-table{width:100%;border-collapse:collapse;min-width:640px}
+    table.csv-table thead th{position:sticky;top:0;background:#f9fafb;border-bottom:1px solid #eee;padding:10px 12px;text-align:left;font-weight:600}
+    table.csv-table tbody td{padding:8px 12px;border-bottom:1px solid #f2f2f2;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono','Courier New', monospace;white-space:nowrap}
+    table.csv-table tbody tr:nth-child(odd){background:#fcfcfc}
+    .pagination{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px}
+    .pagination button{padding:6px 10px;border:1px solid #ddd;background:#fff;border-radius:6px;cursor:pointer}
+    .pagination button:disabled{opacity:.5;cursor:not-allowed}
+    .empty{padding:16px;color:#666}
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>CSV Viewer</h1>
+            <nav>
+                <a href="/">Back to Dashboard</a>
+                <a href="/api/docs" target="_blank" rel="noopener noreferrer">API Documentation</a>
+            </nav>
+            <div class="topbar">
+                <a class="button" href="/download?id={{.ID}}" download>Download CSV</a>
+            </div>
+        </header>
+
+        <main class="single-column">
+            <section class="jobs">
+                <div class="job-card">
+                    <div class="card-header">
+                        <div class="card-title">{{if .Name}}{{.Name}}{{else}}Job {{.ID}}{{end}}</div>
+                        <div class="card-meta">
+                            <span class="card-id">{{.ID}}</span>
+                            <span class="card-date">{{.FileName}}</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="controls">
+                <div class="csv-toolbar">
+                    <div class="grow">
+                        <input id="csv-search" type="text" placeholder="Search rows...">
+                    </div>
+                    <label for="page-size">Rows/page</label>
+                    <select id="page-size">
+                        <option value="25">25</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                    </select>
+                    <div class="csv-stats">
+                        <span id="csv-counter">Showing 0–0 of {{.RowCount}} rows</span>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                {{if .Headers}}
+                <div class="csv-table-container">
+                    <table id="csv-table" class="csv-table">
+                        <thead>
+                            <tr>
+                                {{range .Headers}}
+                                <th>{{.}}</th>
+                                {{end}}
+                            </tr>
+                        </thead>
+                        <tbody id="csv-body">
+                            {{range .Rows}}
+                            <tr>
+                                {{range .}}
+                                <td>{{.}}</td>
+                                {{end}}
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <button id="prev-page">Prev</button>
+                    <span id="page-info">Page 1</span>
+                    <button id="next-page">Next</button>
+                </div>
+                {{else}}
+                    <div class="empty">CSV is empty or missing header row.</div>
+                {{end}}
+                <p style="margin-top: 8px; color: #666; font-size: 12px;">
+                    Showing up to {{.MaxRows}} rows for performance. Use the Download button for the full dataset.
+                </p>
+            </section>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tablesort/5.2.1/tablesort.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tablesort/5.2.1/sorts/tablesort.number.min.js"></script>
+    <script>
+    (function(){
+        const tbody = document.getElementById('csv-body');
+        if(!tbody) return;
+        let allRows = Array.from(tbody.querySelectorAll('tr'));
+        let filtered = allRows.slice();
+
+        const searchInput = document.getElementById('csv-search');
+        const pageSizeSel = document.getElementById('page-size');
+        const counter = document.getElementById('csv-counter');
+        const prevBtn = document.getElementById('prev-page');
+        const nextBtn = document.getElementById('next-page');
+        const pageInfo = document.getElementById('page-info');
+
+        let pageSize = parseInt(pageSizeSel.value, 10) || 50;
+        let page = 1;
+
+        function updateCounter(start, end, total){
+            const s = total === 0 ? 0 : start + 1;
+            const e = total === 0 ? 0 : end;
+            if(counter) counter.textContent = `Showing ${s}–${e} of ${total} rows`;
+        }
+
+        function render(){
+            // bounds
+            const total = filtered.length;
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            if(page > totalPages) page = totalPages;
+            const startIdx = (page - 1) * pageSize;
+            const endIdx = Math.min(startIdx + pageSize, total);
+
+            // clear and append
+            while(tbody.firstChild){ tbody.removeChild(tbody.firstChild); }
+            for(let i = startIdx; i < endIdx; i++){
+                tbody.appendChild(filtered[i]);
+            }
+
+            // controls
+            prevBtn.disabled = page <= 1;
+            nextBtn.disabled = page >= totalPages;
+            pageInfo.textContent = `Page ${page} / ${totalPages}`;
+            updateCounter(startIdx, endIdx, total);
+        }
+
+        function applyFilter(){
+            const q = (searchInput.value || '').toLowerCase();
+            if(!q){
+                filtered = allRows.slice();
+            } else {
+                filtered = allRows.filter(tr => tr.textContent.toLowerCase().includes(q));
+            }
+            page = 1;
+            render();
+        }
+
+        // init sorting
+        try {
+            new Tablesort(document.getElementById('csv-table'));
+            // recapture rows after a sort (DOM order changed)
+            const thead = document.querySelector('#csv-table thead');
+            if(thead){
+                thead.addEventListener('click', function(){
+                    setTimeout(function(){
+                        allRows = Array.from(tbody.querySelectorAll('tr'));
+                        applyFilter();
+                    }, 0);
+                });
+            }
+        } catch(e) {}
+
+        // events
+        searchInput.addEventListener('input', function(){ applyFilter(); });
+        pageSizeSel.addEventListener('change', function(){
+            pageSize = parseInt(pageSizeSel.value, 10) || 50;
+            page = 1;
+            render();
+        });
+        prevBtn.addEventListener('click', function(){
+            if(page > 1){ page--; render(); }
+        });
+        nextBtn.addEventListener('click', function(){
+            page++; render();
+        });
+
+        // first render
+        render();
+    })();
+    </script>
+</body>
+</html>

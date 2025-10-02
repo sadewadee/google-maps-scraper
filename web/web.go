@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"embed"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -56,6 +57,11 @@ func New(svc *Service, addr string) (*Server, error) {
 		r = requestWithID(r)
 
 		ans.download(w, r)
+	})
+	mux.HandleFunc("/view", func(w http.ResponseWriter, r *http.Request) {
+		r = requestWithID(r)
+
+		ans.viewCSV(w, r)
 	})
 	mux.HandleFunc("/delete", func(w http.ResponseWriter, r *http.Request) {
 		r = requestWithID(r)
@@ -128,6 +134,7 @@ func New(svc *Service, addr string) (*Server, error) {
 		"static/templates/job_rows.html",
 		"static/templates/job_row.html",
 		"static/templates/redoc.html",
+		"static/templates/csv_view.html",
 	}
 
 	for _, key := range tmplsKeys {
@@ -473,6 +480,105 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to send file", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (s *Server) viewCSV(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := r.Context()
+
+	id, ok := getIDFromRequest(r)
+	if !ok {
+		http.Error(w, "Invalid ID", http.StatusUnprocessableEntity)
+		return
+	}
+
+	job, err := s.svc.Get(ctx, id.String())
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+
+	filePath, err := s.svc.GetCSV(ctx, id.String())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		http.Error(w, "Failed to open file", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+	reader.TrimLeadingSpace = true
+
+	maxRows := 200
+	if v := strings.TrimSpace(r.URL.Query().Get("max")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 5000 {
+				n = 5000
+			}
+			maxRows = n
+		}
+	}
+
+	headers, err := reader.Read()
+	if err != nil && err != io.EOF {
+		http.Error(w, "Failed to read CSV", http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([][]string, 0, maxRows)
+	count := 0
+	for {
+		if count >= maxRows {
+			break
+		}
+		rec, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			// stop on parse error
+			break
+		}
+		rows = append(rows, rec)
+		count++
+	}
+
+	tmpl, ok := s.tmpl["static/templates/csv_view.html"]
+	if !ok {
+		http.Error(w, "missing tpl", http.StatusInternalServerError)
+		return
+	}
+
+	data := struct {
+		ID       string
+		Name     string
+		FileName string
+		Headers  []string
+		Rows     [][]string
+		RowCount int
+		MaxRows  int
+	}{
+		ID:       job.ID,
+		Name:     job.Name,
+		FileName: filepath.Base(filePath),
+		Headers:  headers,
+		Rows:     rows,
+		RowCount: count,
+		MaxRows:  maxRows,
+	}
+
+	_ = tmpl.Execute(w, data)
 }
 
 func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
