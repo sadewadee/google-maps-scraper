@@ -3,6 +3,7 @@ package gmaps
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,11 +20,19 @@ import (
 
 type EmailExtractJobOptions func(*EmailExtractJob)
 
+type CroxyConfig struct {
+	Enabled    bool
+	ProxyURL   string
+	TimeoutSec int
+}
+
 type EmailExtractJob struct {
 	scrapemate.Job
 
-	Entry       *Entry
-	ExitMonitor exiter.Exiter
+	Entry          *Entry
+	ExitMonitor    exiter.Exiter
+	Croxy          CroxyConfig
+	usageInResults bool
 }
 
 func NewEmailJob(parentID string, entry *Entry, opts ...EmailExtractJobOptions) *EmailExtractJob {
@@ -41,6 +50,13 @@ func NewEmailJob(parentID string, entry *Entry, opts ...EmailExtractJobOptions) 
 			MaxRetries: defaultMaxRetries,
 			Priority:   defaultPrio,
 		},
+		// Defaults: Croxy enabled for non-fast path (Email jobs are only created in non-fast flows)
+		Croxy: CroxyConfig{
+			Enabled:    true,
+			ProxyURL:   "https://www.croxyproxy.com/",
+			TimeoutSec: 25,
+		},
+		usageInResults: true,
 	}
 
 	job.Entry = entry
@@ -58,30 +74,64 @@ func WithEmailJobExitMonitor(exitMonitor exiter.Exiter) EmailExtractJobOptions {
 	}
 }
 
+func WithEmailJobCroxy(c CroxyConfig) EmailExtractJobOptions {
+	return func(j *EmailExtractJob) {
+		j.Croxy = c
+	}
+}
+
+// UseInResults controls whether this job's Process output is written to results.
+// When Croxy fallback is scheduled, EmailExtractJob returns nil and should not be written.
+func (j *EmailExtractJob) UseInResults() bool {
+	return j.usageInResults
+}
+
 func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response) (any, []scrapemate.IJob, error) {
 	defer func() {
 		resp.Document = nil
 		resp.Body = nil
 	}()
 
-	defer func() {
-		if j.ExitMonitor != nil {
-			j.ExitMonitor.IncrPlacesCompleted(1)
-		}
-	}()
-
 	log := scrapemate.GetLoggerFromContext(ctx)
-
 	log.Info("Processing email job", "url", j.URL)
+	var nextJobs []scrapemate.IJob
 
-	// if html fetch failed just return
-	if resp.Error != nil {
-		return j.Entry, nil, nil
+	// Decide Croxy fallback strictly for non-Google hosts when fetch error or empty body
+	fallbackReason := ""
+	if j.Croxy.Enabled {
+		host := func() string {
+			u, err := url.Parse(j.Entry.WebSite)
+			if err != nil || u == nil {
+				return ""
+			}
+			return strings.ToLower(u.Hostname())
+		}()
+		if host != "" && !strings.Contains(host, "google") {
+			if resp.Error != nil {
+				fallbackReason = "fetch_error"
+			} else if len(resp.Body) == 0 {
+				fallbackReason = "empty_body"
+			}
+		}
 	}
 
+	if fallbackReason != "" {
+		// Schedule CroxySiteJob fallback for homepage only (do not attempt for candidate pages)
+		opts := []func(*CroxySiteJob){}
+		if j.ExitMonitor != nil {
+			opts = append(opts, WithCroxyJobExitMonitor(j.ExitMonitor))
+		}
+		cj := NewCroxySiteJob(j.ID, j.Entry, j.Croxy, opts...)
+		j.usageInResults = false
+		log.Info("Scheduling Croxy fallback", "target", j.Entry.WebSite, "parent_job_id", j.ID, "reason", fallbackReason)
+		return nil, []scrapemate.IJob{cj}, nil
+	}
+
+	// Normal enrichment path
 	doc, ok := resp.Document.(*goquery.Document)
 	if !ok {
-		return j.Entry, nil, nil
+		// No document and not scheduling croxy: just return current entry
+		return j.Entry, nextJobs, nil
 	}
 
 	// 1) Emails from current page
@@ -90,6 +140,7 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 		emails = regexEmailExtractor(resp.Body)
 	}
 	j.Entry.Emails = uniqueStrings(append(j.Entry.Emails, emails...))
+	log.Info("Homepage emails extracted", "found", len(emails), "total", len(j.Entry.Emails), "url", j.URL)
 
 	// 2) Social links (arrays + legacy single fields), meta, tracking from current page
 	extendSocialFromDoc(doc, j.Entry)
@@ -112,6 +163,35 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 
 		link := candidates[i]
 		body, d, err := fetchDoc(ctx, client, link)
+
+		// Decide Croxy fallback for this candidate page if needed
+		shouldCroxyForLink := false
+		if j.Croxy.Enabled {
+			uh, _ := url.Parse(link)
+			host := ""
+			if uh != nil {
+				host = strings.ToLower(uh.Hostname())
+			}
+			// never use Croxy for Google domains
+			if host != "" && !strings.Contains(host, "google") {
+				if err != nil || d == nil || len(body) == 0 {
+					shouldCroxyForLink = true
+				}
+			}
+		}
+
+		if shouldCroxyForLink {
+			opts := []func(*CroxySiteJob){}
+			if j.ExitMonitor != nil {
+				opts = append(opts, WithCroxyJobExitMonitor(j.ExitMonitor))
+			}
+			// target this candidate URL specifically through Croxy
+			opts = append(opts, WithCroxyTargetURL(link))
+			log.Info("Scheduling Croxy fallback for candidate", "candidate_url", link, "parent_job_id", j.ID, "reason", "fetch_error_or_empty_body")
+			nextJobs = append(nextJobs, NewCroxySiteJob(j.ID, j.Entry, j.Croxy, opts...))
+			continue
+		}
+
 		if err != nil || d == nil {
 			continue
 		}
@@ -122,11 +202,17 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 			em = regexEmailExtractor(body)
 		}
 		j.Entry.Emails = uniqueStrings(append(j.Entry.Emails, em...))
+		log.Info("Candidate page emails extracted", "found", len(em), "total", len(j.Entry.Emails), "candidate_url", link)
 
 		extendSocialFromDoc(d, j.Entry)
 		extendSocialFromJSONLD(d, j.Entry)
 		extractMetaFromDoc(d, j.Entry)
 		extractTrackingFromBody(body, j.Entry)
+	}
+
+	// Mark place completed in ExitMonitor only on successful enrichment path
+	if j.ExitMonitor != nil {
+		j.ExitMonitor.IncrPlacesCompleted(1)
 	}
 
 	return j.Entry, nil, nil
@@ -186,16 +272,29 @@ func regexEmailExtractor(body []byte) []string {
 
 	// Deobfuscate email addresses
 	sBody := string(body)
+
+	// HTML entity decode (e.g., &#64; -> @, &#46; -> .)
+	sBody = html.UnescapeString(sBody)
+
+	// Common obfuscations for "at"
 	sBody = strings.ReplaceAll(sBody, "[at]", "@")
 	sBody = strings.ReplaceAll(sBody, "(at)", "@")
 	sBody = strings.ReplaceAll(sBody, " at ", "@")
+
+	// Common obfuscations for "dot"
+	sBody = strings.ReplaceAll(sBody, "[dot]", ".")
+	sBody = strings.ReplaceAll(sBody, "(dot)", ".")
+	sBody = strings.ReplaceAll(sBody, " dot ", ".")
+	sBody = strings.ReplaceAll(sBody, "[.]", ".")
+
 	body = []byte(sBody)
 
 	addresses := emailaddress.Find(body, false)
 	for i := range addresses {
-		if !seen[addresses[i].String()] {
-			emails = append(emails, addresses[i].String())
-			seen[addresses[i].String()] = true
+		addr := addresses[i].String()
+		if !seen[addr] {
+			emails = append(emails, addr)
+			seen[addr] = true
 		}
 	}
 
@@ -428,4 +527,32 @@ func getValidEmail(s string) (string, error) {
 	}
 
 	return email.String(), nil
+}
+
+// containsBlockSignals attempts to detect content indicating blocking/captcha/verification.
+func containsBlockSignals(s string) bool {
+	if s == "" {
+		return false
+	}
+	s = strings.ToLower(s)
+	signals := []string{
+		"captcha",
+		"verify",
+		"verification",
+		"access denied",
+		"blocked",
+		"temporarily unavailable",
+		"rate limit",
+		"attention required",
+		"just a moment",
+		"please verify you are a human",
+		"unusual traffic",
+		"bot detection",
+	}
+	for _, sig := range signals {
+		if strings.Contains(s, sig) {
+			return true
+		}
+	}
+	return false
 }

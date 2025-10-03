@@ -163,18 +163,24 @@ func (e *Entry) isWithinRadius(lat, lon, radius float64) bool {
 }
 
 func (e *Entry) IsWebsiteValidForEmail() bool {
-	if e.WebSite == "" {
+	s := strings.ToLower(strings.TrimSpace(e.WebSite))
+	if s == "" {
 		return false
 	}
 
-	needles := []string{
-		"facebook",
-		"instragram",
-		"twitter",
+	// Block common social/video platforms where email enrichment is not applicable
+	block := []string{
+		"facebook.com",
+		"instagram.com",
+		"twitter.com",
+		"x.com",
+		"tiktok.com",
+		"youtube.com",
+		"youtu.be",
 	}
 
-	for i := range needles {
-		if strings.Contains(e.WebSite, needles[i]) {
+	for _, b := range block {
+		if strings.Contains(s, b) {
 			return false
 		}
 	}

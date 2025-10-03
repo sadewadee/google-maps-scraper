@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosom/google-maps-scraper/deduper"
 	"github.com/gosom/google-maps-scraper/exiter"
+	"github.com/gosom/google-maps-scraper/gmaps"
 	"github.com/gosom/google-maps-scraper/runner"
 	"github.com/gosom/google-maps-scraper/tlmt"
 	"github.com/gosom/google-maps-scraper/web"
@@ -195,6 +196,11 @@ func (w *webrunner) scrapeJob(ctx context.Context, job *web.Job) error {
 		dedup,
 		exitMonitor,
 		w.cfg.ExtraReviews,
+		gmaps.CroxyConfig{
+			Enabled:    w.cfg.WebEnrichmentCroxyEnabled && !job.Data.FastMode,
+			ProxyURL:   w.cfg.CroxyProxyURL,
+			TimeoutSec: w.cfg.CroxyTimeoutSec,
+		},
 	)
 	if err != nil {
 		err2 := w.svc.Update(ctx, job)

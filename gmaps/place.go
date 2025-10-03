@@ -22,6 +22,7 @@ type PlaceJob struct {
 	ExtractEmail        bool
 	ExitMonitor         exiter.Exiter
 	ExtractExtraReviews bool
+	Croxy               CroxyConfig
 }
 
 func NewPlaceJob(parentID, langCode, u string, extractEmail, extraExtraReviews bool, opts ...PlaceJobOptions) *PlaceJob {
@@ -59,6 +60,12 @@ func WithPlaceJobExitMonitor(exitMonitor exiter.Exiter) PlaceJobOptions {
 	}
 }
 
+func WithPlaceJobCroxy(c CroxyConfig) PlaceJobOptions {
+	return func(j *PlaceJob) {
+		j.Croxy = c
+	}
+}
+
 // UseInResults controls whether this job's Process output is written to results.
 // When the PlaceJob redirects to an EmailExtractJob, it returns nil data and
 // should not be written; we toggle the internal flag accordingly.
@@ -66,12 +73,14 @@ func (j *PlaceJob) UseInResults() bool {
 	return j.UsageInResultststs
 }
 
-func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, []scrapemate.IJob, error) {
+func (j *PlaceJob) Process(ctx context.Context, resp *scrapemate.Response) (any, []scrapemate.IJob, error) {
 	defer func() {
 		resp.Document = nil
 		resp.Body = nil
 		resp.Meta = nil
 	}()
+
+	log := scrapemate.GetLoggerFromContext(ctx)
 
 	raw, ok := resp.Meta["json"].([]byte)
 	if !ok {
@@ -114,6 +123,10 @@ func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, [
 		if j.ExitMonitor != nil {
 			opts = append(opts, WithEmailJobExitMonitor(j.ExitMonitor))
 		}
+		// Always propagate Croxy config down to EmailExtractJob to control fallback behavior per mode
+		opts = append(opts, WithEmailJobCroxy(j.Croxy))
+
+		log.Info("Scheduling EmailExtractJob", "website", entry.WebSite, "place_id", entry.PlaceID, "parent_job_id", j.ID)
 
 		emailJob := NewEmailJob(j.ID, &entry, opts...)
 

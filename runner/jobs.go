@@ -28,6 +28,7 @@ func CreateSeedJobs(
 	dedup deduper.Deduper,
 	exitMonitor exiter.Exiter,
 	extraReviews bool,
+	croxy gmaps.CroxyConfig,
 ) (jobs []scrapemate.IJob, err error) {
 	var lat, lon float64
 
@@ -99,6 +100,9 @@ func CreateSeedJobs(
 			if extraReviews {
 				opts = append(opts, gmaps.WithExtraReviews())
 			}
+
+			// Propagate Croxy config downstream for website enrichment (non-fast mode only)
+			opts = append(opts, gmaps.WithCroxy(croxy))
 
 			job = gmaps.NewGmapJob(id, langCode, query, maxDepth, email, geoCoordinates, zoom, opts...)
 		} else {

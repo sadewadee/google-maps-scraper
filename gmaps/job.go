@@ -28,6 +28,7 @@ type GmapJob struct {
 	Deduper             deduper.Deduper
 	ExitMonitor         exiter.Exiter
 	ExtractExtraReviews bool
+	Croxy               CroxyConfig
 }
 
 func NewGmapJob(
@@ -96,6 +97,12 @@ func WithExtraReviews() GmapJobOptions {
 	}
 }
 
+func WithCroxy(c CroxyConfig) GmapJobOptions {
+	return func(j *GmapJob) {
+		j.Croxy = c
+	}
+}
+
 func (j *GmapJob) UseInResults() bool {
 	return false
 }
@@ -120,6 +127,8 @@ func (j *GmapJob) Process(ctx context.Context, resp *scrapemate.Response) (any, 
 		if j.ExitMonitor != nil {
 			jopts = append(jopts, WithPlaceJobExitMonitor(j.ExitMonitor))
 		}
+		// propagate Croxy config down to PlaceJob so EmailExtractJob can use it for website enrichment fallback
+		jopts = append(jopts, WithPlaceJobCroxy(j.Croxy))
 
 		placeJob := NewPlaceJob(j.ID, j.LangCode, resp.URL, j.ExtractEmail, j.ExtractExtraReviews, jopts...)
 
@@ -131,6 +140,8 @@ func (j *GmapJob) Process(ctx context.Context, resp *scrapemate.Response) (any, 
 				if j.ExitMonitor != nil {
 					jopts = append(jopts, WithPlaceJobExitMonitor(j.ExitMonitor))
 				}
+				// propagate Croxy config down to PlaceJob so EmailExtractJob can use it for website enrichment fallback
+				jopts = append(jopts, WithPlaceJobCroxy(j.Croxy))
 
 				nextJob := NewPlaceJob(j.ID, j.LangCode, href, j.ExtractEmail, j.ExtractExtraReviews, jopts...)
 

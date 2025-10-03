@@ -10,6 +10,7 @@ import (
 	// postgres driver
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/gosom/google-maps-scraper/gmaps"
 	"github.com/gosom/google-maps-scraper/postgres"
 	"github.com/gosom/google-maps-scraper/runner"
 	"github.com/gosom/google-maps-scraper/tlmt"
@@ -152,6 +153,11 @@ func (d *dbrunner) produceSeedJobs(ctx context.Context) error {
 		nil,
 		nil,
 		d.cfg.ExtraReviews,
+		gmaps.CroxyConfig{
+			Enabled:    d.cfg.WebEnrichmentCroxyEnabled && !d.cfg.FastMode,
+			ProxyURL:   d.cfg.CroxyProxyURL,
+			TimeoutSec: d.cfg.CroxyTimeoutSec,
+		},
 	)
 	if err != nil {
 		return err

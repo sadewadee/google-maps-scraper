@@ -12,6 +12,9 @@ type Exiter interface {
 	IncrSeedCompleted(int)
 	IncrPlacesFound(int)
 	IncrPlacesCompleted(int)
+	IncrCroxyUses(int)
+	IncrCroxySuccess(int)
+	IncrCroxyFail(int)
 	Run(context.Context)
 }
 
@@ -20,6 +23,9 @@ type exiter struct {
 	seedCompleted   int
 	placesFound     int
 	placesCompleted int
+	croxyUses       int
+	croxySuccess    int
+	croxyFail       int
 
 	mu         *sync.Mutex
 	cancelFunc context.CancelFunc
@@ -64,6 +70,27 @@ func (e *exiter) IncrPlacesCompleted(val int) {
 	defer e.mu.Unlock()
 
 	e.placesCompleted += val
+}
+
+func (e *exiter) IncrCroxyUses(val int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.croxyUses += val
+}
+
+func (e *exiter) IncrCroxySuccess(val int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.croxySuccess += val
+}
+
+func (e *exiter) IncrCroxyFail(val int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.croxyFail += val
 }
 
 func (e *exiter) Run(ctx context.Context) {

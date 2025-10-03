@@ -79,6 +79,11 @@ type Config struct {
 	Addr                     string
 	DisablePageReuse         bool
 	ExtraReviews             bool
+
+	// Website enrichment CroxyProxy fallback (non-fast mode only)
+	WebEnrichmentCroxyEnabled bool
+	CroxyProxyURL             string
+	CroxyTimeoutSec           int
 }
 
 func ParseConfig() *Config {
@@ -125,6 +130,11 @@ func ParseConfig() *Config {
 	flag.StringVar(&cfg.Addr, "addr", ":8080", "address to listen on for web server")
 	flag.BoolVar(&cfg.DisablePageReuse, "disable-page-reuse", false, "disable page reuse in playwright")
 	flag.BoolVar(&cfg.ExtraReviews, "extra-reviews", false, "enable extra reviews collection")
+
+	// CroxyProxy enrichment flags
+	flag.BoolVar(&cfg.WebEnrichmentCroxyEnabled, "croxy", true, "enable CroxyProxy fallback for website enrichment in non-fast mode")
+	flag.StringVar(&cfg.CroxyProxyURL, "croxy-url", "https://www.croxyproxy.com/", "CroxyProxy URL for website enrichment fallback")
+	flag.IntVar(&cfg.CroxyTimeoutSec, "croxy-timeout", 25, "CroxyProxy timeout in seconds for website enrichment fallback")
 
 	flag.Parse()
 

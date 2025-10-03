@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/gosom/google-maps-scraper/exiter"
+	"github.com/gosom/google-maps-scraper/gmaps"
 	"github.com/gosom/google-maps-scraper/runner"
 	"github.com/gosom/scrapemate"
 	"github.com/gosom/scrapemate/adapters/writers/csvwriter"
@@ -90,6 +91,11 @@ func (l *lambdaAwsRunner) handler(ctx context.Context, input lInput) error {
 		nil,
 		exitMonitor,
 		input.ExtraReviews,
+		gmaps.CroxyConfig{
+			Enabled:    true, // non-fast mode, so enabled
+			ProxyURL:   "https://www.croxyproxy.com/",
+			TimeoutSec: 25,
+		},
 	)
 	if err != nil {
 		return err

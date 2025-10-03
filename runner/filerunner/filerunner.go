@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosom/google-maps-scraper/deduper"
 	"github.com/gosom/google-maps-scraper/exiter"
+	"github.com/gosom/google-maps-scraper/gmaps"
 	"github.com/gosom/google-maps-scraper/runner"
 	"github.com/gosom/google-maps-scraper/tlmt"
 	"github.com/gosom/scrapemate"
@@ -87,6 +88,11 @@ func (r *fileRunner) Run(ctx context.Context) (err error) {
 		dedup,
 		exitMonitor,
 		r.cfg.ExtraReviews,
+		gmaps.CroxyConfig{
+			Enabled:    r.cfg.WebEnrichmentCroxyEnabled && !r.cfg.FastMode,
+			ProxyURL:   r.cfg.CroxyProxyURL,
+			TimeoutSec: r.cfg.CroxyTimeoutSec,
+		},
 	)
 	if err != nil {
 		return err
