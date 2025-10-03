@@ -6,3 +6,5 @@ webdata/
 /gmapsdata
 /webdata
 google-maps-scraper
+*.csv
+*.txt

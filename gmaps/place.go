@@ -54,16 +54,16 @@ func NewPlaceJob(parentID, langCode, u string, extractEmail, extraExtraReviews b
 }
 
 func WithPlaceJobExitMonitor(exitMonitor exiter.Exiter) PlaceJobOptions {
-    return func(j *PlaceJob) {
-        j.ExitMonitor = exitMonitor
-    }
+	return func(j *PlaceJob) {
+		j.ExitMonitor = exitMonitor
+	}
 }
 
 // UseInResults controls whether this job's Process output is written to results.
 // When the PlaceJob redirects to an EmailExtractJob, it returns nil data and
 // should not be written; we toggle the internal flag accordingly.
 func (j *PlaceJob) UseInResults() bool {
-    return j.UsageInResultststs
+	return j.UsageInResultststs
 }
 
 func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, []scrapemate.IJob, error) {
@@ -92,6 +92,21 @@ func (j *PlaceJob) Process(_ context.Context, resp *scrapemate.Response) (any, [
 	allReviewsRaw, ok := resp.Meta["reviews_raw"].(fetchReviewsResponse)
 	if ok && len(allReviewsRaw.pages) > 0 {
 		entry.AddExtraReviews(allReviewsRaw.pages)
+	}
+
+	// Build review URL with language (hl) and country (gl) parameters
+	hl := ""
+	if j.URLParams != nil {
+		hl = j.URLParams["hl"]
+	}
+	gl := countryToRegion(entry.CompleteAddress.Country)
+	if entry.PlaceID != "" {
+		entry.ReviewURL = buildReviewURL(entry.PlaceID, hl, gl)
+	}
+
+	// Apply claimed inference from BrowserActions heuristic if present
+	if v, ok := resp.Meta["claimed"].(string); ok && v != "" {
+		entry.Claimed = v
 	}
 
 	if j.ExtractEmail && entry.IsWebsiteValidForEmail() {
@@ -162,6 +177,20 @@ func (j *PlaceJob) BrowserActions(ctx context.Context, page playwright.Page) scr
 	}
 
 	resp.Meta["json"] = raw
+
+	// Heuristic claimed detection from page content (language-agnostic best-effort)
+	// If we see "Claim this business" or "Own this business", mark as NO.
+	// If we see "verified" or "claimed" but not the prompt to claim, mark as YES.
+	// Otherwise leave unset to be decided by other signals (e.g., Owner ID).
+	content, _ := page.Content()
+	claimed := ""
+	lc := strings.ToLower(content)
+	if strings.Contains(lc, "claim this business") || strings.Contains(lc, "own this business") {
+		claimed = "NO"
+	} else if strings.Contains(lc, "verified") || strings.Contains(lc, "claimed") {
+		claimed = "YES"
+	}
+	resp.Meta["claimed"] = claimed
 
 	if j.ExtractExtraReviews {
 		reviewCount := j.getReviewCount(raw)

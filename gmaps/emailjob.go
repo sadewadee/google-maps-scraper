@@ -2,7 +2,13 @@ package gmaps
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
@@ -78,14 +84,50 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 		return j.Entry, nil, nil
 	}
 
+	// 1) Emails from current page
 	emails := docEmailExtractor(doc)
 	if len(emails) == 0 {
 		emails = regexEmailExtractor(resp.Body)
 	}
+	j.Entry.Emails = uniqueStrings(append(j.Entry.Emails, emails...))
 
-	j.Entry.Emails = emails
+	// 2) Social links (arrays + legacy single fields), meta, tracking from current page
+	extendSocialFromDoc(doc, j.Entry)
+	extendSocialFromJSONLD(doc, j.Entry)
+	extractMetaFromDoc(doc, j.Entry)
+	extractTrackingFromBody(resp.Body, j.Entry)
 
-	socialMediaExtractor(doc, j.Entry)
+	// 3) Follow in-site candidate pages (Contact/About/Privacy) up to depth 3 (best-effort)
+	const maxFollow = 3
+	base := j.URL
+	candidates := sameDomainCandidates(doc, base, maxFollow)
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	for i := range candidates {
+		select {
+		case <-ctx.Done():
+			break
+		default:
+		}
+
+		link := candidates[i]
+		body, d, err := fetchDoc(ctx, client, link)
+		if err != nil || d == nil {
+			continue
+		}
+
+		// Enrich per page
+		em := docEmailExtractor(d)
+		if len(em) == 0 {
+			em = regexEmailExtractor(body)
+		}
+		j.Entry.Emails = uniqueStrings(append(j.Entry.Emails, em...))
+
+		extendSocialFromDoc(d, j.Entry)
+		extendSocialFromJSONLD(d, j.Entry)
+		extractMetaFromDoc(d, j.Entry)
+		extractTrackingFromBody(body, j.Entry)
+	}
 
 	return j.Entry, nil, nil
 }
@@ -116,24 +158,21 @@ func docEmailExtractor(doc *goquery.Document) []string {
 }
 
 func socialMediaExtractor(doc *goquery.Document, entry *Entry) {
+	// Backward compatibility: keep first occurrence in legacy fields
 	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if !exists {
 			return
 		}
-
 		if entry.Facebook == "" && strings.Contains(href, "facebook.com") {
 			entry.Facebook = href
 		}
-
 		if entry.Instagram == "" && strings.Contains(href, "instagram.com") {
 			entry.Instagram = href
 		}
-
 		if entry.LinkedIn == "" && strings.Contains(href, "linkedin.com") {
 			entry.LinkedIn = href
 		}
-
 		if entry.WhatsApp == "" && (strings.Contains(href, "whatsapp.com") || strings.Contains(href, "wa.me")) {
 			entry.WhatsApp = href
 		}
@@ -161,6 +200,225 @@ func regexEmailExtractor(body []byte) []string {
 	}
 
 	return emails
+}
+
+// ----------------- Enrichment helpers -----------------
+
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	var out []string
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+func addTo(arr *[]string, vals ...string) {
+	if arr == nil {
+		return
+	}
+	*arr = uniqueStrings(append(*arr, vals...))
+}
+
+func extendSocialFromDoc(doc *goquery.Document, entry *Entry) {
+	if doc == nil || entry == nil {
+		return
+	}
+	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
+		href := strings.TrimSpace(s.AttrOr("href", ""))
+		if href == "" {
+			return
+		}
+		l := strings.ToLower(href)
+		switch {
+		case strings.Contains(l, "facebook.com"):
+			addTo(&entry.FacebookLinks, href)
+		case strings.Contains(l, "instagram.com"):
+			addTo(&entry.InstagramLinks, href)
+		case strings.Contains(l, "linkedin.com"):
+			addTo(&entry.LinkedInLinks, href)
+		case strings.Contains(l, "pinterest."):
+			addTo(&entry.PinterestLinks, href)
+		case strings.Contains(l, "tiktok.com"):
+			addTo(&entry.TiktokLinks, href)
+		case strings.Contains(l, "twitter.com") || strings.Contains(l, "x.com"):
+			addTo(&entry.TwitterLinks, href)
+		case strings.Contains(l, "yelp.com"):
+			addTo(&entry.YelpLinks, href)
+		case strings.Contains(l, "youtube.com") || strings.Contains(l, "youtu.be"):
+			addTo(&entry.YoutubeLinks, href)
+		}
+	})
+}
+
+func extendSocialFromJSONLD(doc *goquery.Document, entry *Entry) {
+	if doc == nil || entry == nil {
+		return
+	}
+	doc.Find(`script[type="application/ld+json"]`).Each(func(_ int, s *goquery.Selection) {
+		raw := strings.TrimSpace(s.Text())
+		if raw == "" {
+			return
+		}
+		var anyJSON any
+		if err := json.Unmarshal([]byte(raw), &anyJSON); err != nil {
+			return
+		}
+		extractSameAsLinks(anyJSON, entry)
+	})
+}
+
+func extractSameAsLinks(node any, entry *Entry) {
+	switch v := node.(type) {
+	case map[string]any:
+		for k, vv := range v {
+			if strings.EqualFold(k, "sameAs") {
+				switch arr := vv.(type) {
+				case []any:
+					for _, it := range arr {
+						if s, ok := it.(string); ok {
+							l := strings.ToLower(s)
+							switch {
+							case strings.Contains(l, "facebook.com"):
+								addTo(&entry.FacebookLinks, s)
+							case strings.Contains(l, "instagram.com"):
+								addTo(&entry.InstagramLinks, s)
+							case strings.Contains(l, "linkedin.com"):
+								addTo(&entry.LinkedInLinks, s)
+							case strings.Contains(l, "pinterest."):
+								addTo(&entry.PinterestLinks, s)
+							case strings.Contains(l, "tiktok.com"):
+								addTo(&entry.TiktokLinks, s)
+							case strings.Contains(l, "twitter.com") || strings.Contains(l, "x.com"):
+								addTo(&entry.TwitterLinks, s)
+							case strings.Contains(l, "yelp.com"):
+								addTo(&entry.YelpLinks, s)
+							case strings.Contains(l, "youtube.com") || strings.Contains(l, "youtu.be"):
+								addTo(&entry.YoutubeLinks, s)
+							}
+						}
+					}
+				}
+			} else {
+				extractSameAsLinks(vv, entry)
+			}
+		}
+	case []any:
+		for _, it := range v {
+			extractSameAsLinks(it, entry)
+		}
+	}
+}
+
+func extractMetaFromDoc(doc *goquery.Document, entry *Entry) {
+	if entry == nil || doc == nil {
+		return
+	}
+	if entry.Meta.Title == "" {
+		entry.Meta.Title = strings.TrimSpace(doc.Find("head title").First().Text())
+	}
+	if entry.Meta.Description == "" {
+		// Try meta name=description then og:description
+		if v := strings.TrimSpace(doc.Find(`meta[name="description"]`).AttrOr("content", "")); v != "" {
+			entry.Meta.Description = v
+		} else if v := strings.TrimSpace(doc.Find(`meta[property="og:description"]`).AttrOr("content", "")); v != "" {
+			entry.Meta.Description = v
+		}
+	}
+}
+
+var (
+	reUA  = regexp.MustCompile(`UA-\d{4,}-\d+`)
+	reGA4 = regexp.MustCompile(`G-[A-Z0-9]{6,}`)
+)
+
+func extractTrackingFromBody(body []byte, entry *Entry) {
+	if entry == nil || len(body) == 0 {
+		return
+	}
+	s := string(body)
+	if entry.TrackingIDs.Google.UA == "" {
+		if m := reUA.FindString(s); m != "" {
+			entry.TrackingIDs.Google.UA = m
+		}
+	}
+	if entry.TrackingIDs.Google.GA4 == "" {
+		if m := reGA4.FindString(s); m != "" {
+			entry.TrackingIDs.Google.GA4 = m
+		}
+	}
+}
+
+func fetchDoc(ctx context.Context, client *http.Client, u string) ([]byte, *goquery.Document, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, nil, nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
+	if err != nil {
+		return body, nil, err
+	}
+	return body, doc, nil
+}
+
+func sameDomainCandidates(doc *goquery.Document, base string, max int) []string {
+	if doc == nil || base == "" || max <= 0 {
+		return nil
+	}
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return nil
+	}
+	isCandidate := func(href, text string) bool {
+		t := strings.ToLower(text + " " + href)
+		return strings.Contains(t, "contact") ||
+			strings.Contains(t, "about") ||
+			strings.Contains(t, "privacy") ||
+			strings.Contains(t, "kontak") ||
+			strings.Contains(t, "tentang") ||
+			strings.Contains(t, "hubungi")
+	}
+	var out []string
+	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
+		if len(out) >= max {
+			return
+		}
+		href := strings.TrimSpace(s.AttrOr("href", ""))
+		if href == "" {
+			return
+		}
+		u, err := url.Parse(href)
+		if err != nil {
+			return
+		}
+		if !u.IsAbs() {
+			u = baseURL.ResolveReference(u)
+		}
+		if strings.EqualFold(u.Hostname(), baseURL.Hostname()) && isCandidate(href, s.Text()) {
+			out = append(out, u.String())
+		}
+	})
+	return uniqueStrings(out)
 }
 
 func getValidEmail(s string) (string, error) {

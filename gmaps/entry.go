@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"iter"
 	"math"
+	"net/url"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strconv"
@@ -98,6 +100,39 @@ type Entry struct {
 	Instagram string `json:"instagram,omitempty"`
 	LinkedIn  string `json:"linkedin,omitempty"`
 	WhatsApp  string `json:"whatsapp,omitempty"`
+
+	// Derived and enrichment fields for sample parity
+	PlaceID               string   `json:"place_id,omitempty"`
+	Kgmid                 string   `json:"kgmid,omitempty"`
+	GoogleMapsURL         string   `json:"google_maps_url,omitempty"`
+	GoogleKnowledgeURL    string   `json:"google_knowledge_url,omitempty"`
+	ReviewURL             string   `json:"review_url,omitempty"`
+	Domain                string   `json:"domain,omitempty"`
+	Phones                []string `json:"phones,omitempty"`
+	Claimed               string   `json:"claimed,omitempty"` // "YES"/"NO"
+	FeaturedImage         string   `json:"featured_image,omitempty"`
+	OpeningHoursFormatted string   `json:"opening_hours,omitempty"`
+
+	Meta struct {
+		Title       string `json:"title,omitempty"`
+		Description string `json:"description,omitempty"`
+	} `json:"meta,omitempty"`
+
+	TrackingIDs struct {
+		Google struct {
+			UA  string `json:"ua,omitempty"`
+			GA4 string `json:"ga4,omitempty"`
+		} `json:"google,omitempty"`
+	} `json:"tracking_ids,omitempty"`
+
+	FacebookLinks  []string `json:"facebook_links,omitempty"`
+	InstagramLinks []string `json:"instagram_links,omitempty"`
+	LinkedInLinks  []string `json:"linkedin_links,omitempty"`
+	PinterestLinks []string `json:"pinterest_links,omitempty"`
+	TiktokLinks    []string `json:"tiktok_links,omitempty"`
+	TwitterLinks   []string `json:"twitter_links,omitempty"`
+	YelpLinks      []string `json:"yelp_links,omitempty"`
+	YoutubeLinks   []string `json:"youtube_links,omitempty"`
 }
 
 func (e *Entry) haversineDistance(lat, lon float64) float64 {
@@ -387,6 +422,10 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 
 	if entry.Owner.ID != "" {
 		entry.Owner.Link = fmt.Sprintf("https://www.google.com/maps/contrib/%s", entry.Owner.ID)
+		// Heuristic: if there is an Owner ID, consider the business as claimed
+		if entry.Claimed == "" {
+			entry.Claimed = "YES"
+		}
 	}
 
 	entry.CompleteAddress = Address{
@@ -433,6 +472,36 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 
 	reviewsI := getNthElementAndCast[[]any](darray, 175, 9, 0, 0)
 	entry.UserReviews = make([]Review, 0, len(reviewsI))
+
+	// Derived fields for richer dataset
+	entry.GoogleMapsURL = entry.Link
+	entry.FeaturedImage = selectFeaturedImage(&entry)
+
+	// place_id from reviews link
+	entry.PlaceID = extractPlaceIDFromReviewsLink(entry.ReviewsLink)
+	if entry.PlaceID != "" {
+		entry.ReviewURL = buildReviewURL(entry.PlaceID, "", "")
+	}
+
+	// kgmid from raw JSON graph scan
+	if kg := scanKgmidFromJSONArr(jd); kg != "" {
+		entry.Kgmid = kg
+		entry.GoogleKnowledgeURL = fmt.Sprintf("https://www.google.com/search?kgmid=%s&kponly", kg)
+	}
+
+	// opening hours formatted string
+	entry.OpeningHoursFormatted = formatOpeningHoursString(entry.OpenHours)
+
+	// domain canonicalization
+	entry.Domain = canonicalDomain(entry.WebSite)
+
+	// phones normalization (best-effort; requires region hint)
+	entry.Phones = normalizePhones(entry.Phone, entry.CompleteAddress.Country)
+
+	// default claimed to NO unless enrichment sets YES later
+	if entry.Claimed == "" {
+		entry.Claimed = "NO"
+	}
 
 	return entry, nil
 }
@@ -691,4 +760,239 @@ func filterAndSortEntriesWithinRadius(entries []*Entry, lat, lon, radius float64
 	}
 
 	return slices.Collect(iter.Seq[*Entry](resultIterator))
+}
+
+// -------- Derived helpers for normalization and enrichment --------
+
+func formatOpeningHoursString(hours map[string][]string) string {
+	if len(hours) == 0 {
+		return ""
+	}
+	order := []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
+	var parts []string
+	for _, day := range order {
+		if times, ok := hours[day]; ok {
+			// Normalize "Open 24 hours" into bracketed format
+			for i := range times {
+				times[i] = strings.TrimSpace(times[i])
+			}
+			item := fmt.Sprintf("%s: [%s]", day, strings.Join(times, ", "))
+			parts = append(parts, item)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func canonicalDomain(site string) string {
+	site = strings.TrimSpace(site)
+	if site == "" {
+		return ""
+	}
+	s := site
+	// Ensure parsable URL
+	if !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") {
+		s = "http://" + s
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		host := strings.TrimSpace(site)
+		host = strings.ToLower(host)
+		host = strings.TrimPrefix(host, "www.")
+		return host
+	}
+	host := strings.ToLower(u.Host)
+	host = strings.TrimPrefix(host, "www.")
+	return host
+}
+
+func normalizePhones(phone, country string) []string {
+	var out []string
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		for _, e := range out {
+			if e == v {
+				return
+			}
+		}
+		out = append(out, v)
+	}
+
+	s := strings.TrimSpace(phone)
+	if s == "" {
+		return out
+	}
+
+	// Best-effort digit extraction (keep '+' if present)
+	digits := func(in string) string {
+		var b strings.Builder
+		for _, r := range in {
+			if (r >= '0' && r <= '9') || r == '+' {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}(s)
+
+	// Country calling code map
+	countryCallingCode := func(region string) string {
+		switch strings.ToUpper(region) {
+		case "US", "CA":
+			return "+1"
+		case "ID":
+			return "+62"
+		case "SG":
+			return "+65"
+		case "MY":
+			return "+60"
+		case "PH":
+			return "+63"
+		case "TH":
+			return "+66"
+		case "VN":
+			return "+84"
+		case "IN":
+			return "+91"
+		case "GB":
+			return "+44"
+		case "AU":
+			return "+61"
+		default:
+			return ""
+		}
+	}
+
+	region := countryToRegion(strings.TrimSpace(country))
+	cc := countryCallingCode(region)
+
+	// National (preserve input formatting)
+	add(s)
+
+	// International representation
+	if strings.HasPrefix(digits, "+") {
+		add(digits)
+	} else if cc != "" {
+		add(cc + " " + digits)
+		add(strings.ReplaceAll(cc+digits, " ", ""))
+	} else {
+		add(digits)
+	}
+
+	// E.164 (best effort)
+	if strings.HasPrefix(digits, "+") {
+		add(digits)
+	} else if cc != "" {
+		add(strings.ReplaceAll(cc+digits, " ", ""))
+	}
+
+	return out
+}
+
+func countryToRegion(country string) string {
+	if country == "" {
+		return "US"
+	}
+	// If already ISO-2 code
+	if len(country) == 2 {
+		return strings.ToUpper(country)
+	}
+	switch strings.ToLower(strings.TrimSpace(country)) {
+	case "united states", "usa", "u.s.a.":
+		return "US"
+	case "indonesia":
+		return "ID"
+	case "singapore":
+		return "SG"
+	case "malaysia":
+		return "MY"
+	case "philippines":
+		return "PH"
+	case "thailand":
+		return "TH"
+	case "vietnam":
+		return "VN"
+	case "india":
+		return "IN"
+	case "united kingdom", "uk", "great britain":
+		return "GB"
+	case "canada":
+		return "CA"
+	case "australia":
+		return "AU"
+	default:
+		return "US"
+	}
+}
+
+func selectFeaturedImage(e *Entry) string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Thumbnail) != "" {
+		return e.Thumbnail
+	}
+	if len(e.Images) > 0 {
+		if strings.TrimSpace(e.Images[0].Image) != "" {
+			return e.Images[0].Image
+		}
+	}
+	return ""
+}
+
+func extractPlaceIDFromReviewsLink(link string) string {
+	link = strings.TrimSpace(link)
+	if link == "" {
+		return ""
+	}
+	u, err := url.Parse(link)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("placeid")
+}
+
+func scanKgmidFromJSONArr(arr []any) string {
+	if len(arr) == 0 {
+		return ""
+	}
+	re := regexp.MustCompile(`kgmid=\/g\/([A-Za-z0-9]+)`)
+	var ans string
+	var walk func([]any)
+	walk = func(a []any) {
+		for _, v := range a {
+			if ans != "" {
+				return
+			}
+			switch t := v.(type) {
+			case string:
+				m := re.FindStringSubmatch(t)
+				if len(m) == 2 {
+					ans = "/g/" + m[1]
+					return
+				}
+			case []any:
+				walk(t)
+			default:
+				// ignore
+			}
+		}
+	}
+	walk(arr)
+	return ans
+}
+
+func buildReviewURL(placeID, lang, country string) string {
+	if strings.TrimSpace(placeID) == "" {
+		return ""
+	}
+	base := "https://search.google.com/local/reviews?placeid=" + placeID + "&authuser=0"
+	if strings.TrimSpace(lang) != "" {
+		base += "&hl=" + strings.TrimSpace(lang)
+	}
+	if strings.TrimSpace(country) != "" {
+		base += "&gl=" + strings.TrimSpace(country)
+	}
+	return base
 }
