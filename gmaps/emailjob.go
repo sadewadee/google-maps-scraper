@@ -147,6 +147,11 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 	extendSocialFromJSONLD(doc, j.Entry)
 	extractMetaFromDoc(doc, j.Entry)
 	extractTrackingFromBody(resp.Body, j.Entry)
+	// Populate legacy single social fields for CSV and extract phone
+	socialMediaExtractor(doc, j.Entry)
+	phoneExtractor(doc, j.Entry)
+	// Backfill single social fields from arrays when only JSON-LD provided
+	backfillLegacySocialFromArrays(j.Entry)
 
 	// 3) Follow in-site candidate pages (Contact/About/Privacy) up to depth 3 (best-effort)
 	const maxFollow = 3
@@ -208,6 +213,10 @@ func (j *EmailExtractJob) Process(ctx context.Context, resp *scrapemate.Response
 		extendSocialFromJSONLD(d, j.Entry)
 		extractMetaFromDoc(d, j.Entry)
 		extractTrackingFromBody(body, j.Entry)
+		// Populate legacy social fields and phone from candidate page
+		socialMediaExtractor(d, j.Entry)
+		phoneExtractor(d, j.Entry)
+		backfillLegacySocialFromArrays(j.Entry)
 	}
 
 	// Mark place completed in ExitMonitor only on successful enrichment path
@@ -263,6 +272,60 @@ func socialMediaExtractor(doc *goquery.Document, entry *Entry) {
 			entry.WhatsApp = href
 		}
 	})
+}
+func phoneExtractor(doc *goquery.Document, entry *Entry) {
+	if doc == nil || entry == nil {
+		return
+	}
+	var found []string
+
+	// Extract tel: anchors
+	doc.Find("a[href^='tel:']").Each(func(_ int, s *goquery.Selection) {
+		href := strings.TrimSpace(s.AttrOr("href", ""))
+		if href == "" {
+			return
+		}
+		num := strings.TrimSpace(strings.TrimPrefix(href, "tel:"))
+		// Basic cleanup of common encodings/formatting
+		num = strings.ReplaceAll(num, "%20", " ")
+		num = strings.ReplaceAll(num, "-", " ")
+		num = strings.ReplaceAll(num, "(0)", "0")
+		if num != "" {
+			found = append(found, num)
+		}
+	})
+
+	// Normalize and add to Entry.Phones
+	for _, f := range found {
+		nums := normalizePhones(f, entry.CompleteAddress.Country)
+		addTo(&entry.Phones, nums...)
+	}
+
+	// Set primary Entry.Phone if missing
+	if strings.TrimSpace(entry.Phone) == "" {
+		for _, f := range found {
+			if strings.TrimSpace(f) != "" {
+				entry.Phone = f
+				break
+			}
+		}
+	}
+}
+
+func backfillLegacySocialFromArrays(entry *Entry) {
+	if entry == nil {
+		return
+	}
+	if entry.Facebook == "" && len(entry.FacebookLinks) > 0 {
+		entry.Facebook = entry.FacebookLinks[0]
+	}
+	if entry.Instagram == "" && len(entry.InstagramLinks) > 0 {
+		entry.Instagram = entry.InstagramLinks[0]
+	}
+	if entry.LinkedIn == "" && len(entry.LinkedInLinks) > 0 {
+		entry.LinkedIn = entry.LinkedInLinks[0]
+	}
+	// WhatsApp does not have an array; it is set via anchor extraction when present
 }
 
 func regexEmailExtractor(body []byte) []string {

@@ -369,6 +369,67 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 	entry.OpenHours = getHours(darray)
 	entry.PopularTimes = getPopularTimes(darray)
 	entry.WebSite = getNthElementAndCast[string](darray, 7, 0)
+
+	// If website is a social URL, populate legacy single fields used in CSV and arrays for parity
+	if s := strings.ToLower(strings.TrimSpace(entry.WebSite)); s != "" {
+		if strings.Contains(s, "facebook.com") {
+			if entry.Facebook == "" {
+				entry.Facebook = entry.WebSite
+			}
+			if entry.FacebookLinks == nil {
+				entry.FacebookLinks = make([]string, 0, 1)
+			}
+			exists := false
+			for _, v := range entry.FacebookLinks {
+				if v == entry.WebSite {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				entry.FacebookLinks = append(entry.FacebookLinks, entry.WebSite)
+			}
+		} else if strings.Contains(s, "instagram.com") {
+			if entry.Instagram == "" {
+				entry.Instagram = entry.WebSite
+			}
+			if entry.InstagramLinks == nil {
+				entry.InstagramLinks = make([]string, 0, 1)
+			}
+			exists := false
+			for _, v := range entry.InstagramLinks {
+				if v == entry.WebSite {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				entry.InstagramLinks = append(entry.InstagramLinks, entry.WebSite)
+			}
+		} else if strings.Contains(s, "linkedin.com") {
+			if entry.LinkedIn == "" {
+				entry.LinkedIn = entry.WebSite
+			}
+			if entry.LinkedInLinks == nil {
+				entry.LinkedInLinks = make([]string, 0, 1)
+			}
+			exists := false
+			for _, v := range entry.LinkedInLinks {
+				if v == entry.WebSite {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				entry.LinkedInLinks = append(entry.LinkedInLinks, entry.WebSite)
+			}
+		} else if strings.Contains(s, "wa.me") || strings.Contains(s, "whatsapp.com") {
+			if entry.WhatsApp == "" {
+				entry.WhatsApp = entry.WebSite
+			}
+		}
+	}
+
 	entry.Phone = getNthElementAndCast[string](darray, 178, 0, 0)
 	entry.PlusCode = getNthElementAndCast[string](darray, 183, 2, 2, 0)
 	entry.ReviewRating = getNthElementAndCast[float64](darray, 4, 7)
